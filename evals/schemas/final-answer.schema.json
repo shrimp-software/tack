@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["summary", "usedOperation", "observations"],
+  "properties": {
+    "summary": {
+      "type": "string"
+    },
+    "usedOperation": {
+      "type": ["string", "null"]
+    },
+    "observations": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "error": {
+      "type": ["string", "null"]
+    }
+  }
+}
+

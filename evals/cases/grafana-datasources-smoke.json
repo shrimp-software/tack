@@ -1,0 +1,11 @@
+{
+  "id": "grafana-datasources-smoke",
+  "title": "Grafana datasource discovery and summary",
+  "prompt": "Use the connected MCP server to inspect the available execution workflow, then run code through its execute tool to find and call the Grafana datasource-listing operation. Return a concise summary of the datasource count and include the operation/tool path you used. Do not invent data if Grafana returns an error; report the error details instead.",
+  "expectations": [
+    "Calls the target MCP execute tool instead of answering from memory.",
+    "Uses search/describe or equivalent workflow before calling Grafana.",
+    "Mentions the selected Grafana datasource operation path or tool path.",
+    "Does not dump a full raw execution envelope."
+  ]
+}

@@ -1,0 +1,749 @@
+import { Buffer } from "node:buffer";
+import { Client } from "@modelcontextprotocol/client";
+import { InMemoryTransport } from "@modelcontextprotocol/server";
+import { describe, expect, it } from "vitest";
+import { describeTool, searchOperations } from "@tack/codemode";
+import { createTackResult, type TackRuntime } from "@tack/core";
+import { createQuickJSRuntime } from "@tack/runtime-quickjs";
+import { fakeRuntime, grafanaManifest } from "../../core/test/fixtures.js";
+import type { CodeRuntime } from "@tack/codemode";
+
+import { createTackAgentServer } from "../src/index.js";
+
+describe("agent search", () => {
+  it("finds inferred operations by full path while keeping schemas behind describe", async () => {
+    const manifest = grafanaManifest();
+    const result = searchOperations(manifest, { query: "unique identifier" });
+
+    expect(result.items[0]).toMatchObject({
+      path: "grafana.alerting.rules.get",
+      toolId: "grafana.alerting_manage_rules",
+      namespace: "grafana",
+      serverId: "grafana",
+      score: expect.any(Number),
+      matchedTokens: ["identifier", "unique"]
+    });
+    expect(result.items[0]).not.toHaveProperty("inputSchema");
+
+    const described = await describeTool(manifest, {
+      path: result.items[0]?.path ?? ""
+    });
+    expect(described).toMatchObject({
+      inputSchema: expect.objectContaining({
+        properties: expect.not.objectContaining({
+          operation: expect.anything()
+        })
+      })
+    });
+  });
+});
+
+describe("JavaScript executor", () => {
+  it("executes inferred tools calls and injects split arguments", async () => {
+    const calls: Array<{ toolId: string; args: unknown }> = [];
+    const runtime = fakeRuntime(calls);
+    const codeRuntime = createQuickJSRuntime({ timeoutMs: 5_000 });
+
+    const { createExecutionEngine } = await import("@tack/codemode");
+    const engine = createExecutionEngine({
+      manifest: grafanaManifest(),
+      runtime,
+      codeRuntime
+    });
+
+    const result = await engine.execute(`
+const matches = await tools.search({ query: "list rules", limit: 2 });
+const details = await tools.describe.tool({ path: matches.items[0].path });
+const rules = await tools.grafana.alerting.rules.list();
+const datasources = await tools.call("grafana.datasources.list");
+emit({ count: 2 });
+return { details, rules, datasources };
+`);
+
+    expect(result).toMatchObject({
+      ok: true,
+      emitted: [{ count: 2 }]
+    });
+    expect(result.result).toMatchObject({
+      details: { path: "grafana.alerting.rules.list" },
+      rules: { ok: true, data: { toolId: "grafana.alerting_manage_rules" } },
+      datasources: { ok: true, data: { toolId: "grafana.list_datasources" } }
+    });
+    expect(calls).toEqual([
+      {
+        toolId: "grafana.alerting_manage_rules",
+        args: { operation: "list" }
+      },
+      {
+        toolId: "grafana.list_datasources",
+        args: {}
+      }
+    ]);
+  });
+});
+
+describe("MCP server", () => {
+  it("returns the same execute structured output as the direct executor", async () => {
+    const manifest = grafanaManifest();
+    const directCalls: Array<{ toolId: string; args: unknown }> = [];
+    const mcpCalls: Array<{ toolId: string; args: unknown }> = [];
+    const codeRuntime: CodeRuntime = {
+      name: "test",
+      isolation: "none",
+      execute: async ({ invoker }) => {
+        const search = await invoker.invoke({
+          path: "search",
+          args: { query: "datasources" }
+        });
+        const datasources = await invoker.invoke({
+          path: "grafana.datasources.list",
+          args: {}
+        });
+        return {
+          ok: true,
+          result: { search, datasources },
+          emitted: [],
+          logs: []
+        };
+      }
+    };
+    const { createExecutionEngine } = await import("@tack/codemode");
+    const directEngine = createExecutionEngine({
+      manifest,
+      runtime: fakeRuntime(directCalls),
+      codeRuntime
+    });
+    const server = createTackAgentServer({
+      manifest,
+      runtime: fakeRuntime(mcpCalls),
+      codeRuntime
+    });
+    const client = new Client({ name: "tack-test", version: "0.1.0" });
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+
+    await Promise.all([
+      server.connect(serverTransport),
+      client.connect(clientTransport)
+    ]);
+
+    try {
+      const directExecuted = await directEngine.execute("return tools.grafana.datasources.list();");
+      const mcpExecuted = await client.callTool({
+        name: "execute",
+        arguments: {
+          code: "return tools.grafana.datasources.list();"
+        }
+      });
+
+      expect(mcpExecuted.structuredContent).toEqual({
+        status: "completed",
+        result: {
+          search: directExecuted.result?.search,
+          datasources: directExecuted.result?.datasources
+        },
+        logs: []
+      });
+      expect(mcpExecuted.isError).toBeUndefined();
+      expect(extractText(mcpExecuted.content)).toBe(JSON.stringify({
+        search: directExecuted.result?.search,
+        datasources: directExecuted.result?.datasources
+      }, null, 2));
+      expect(directCalls).toEqual([{ toolId: "grafana.list_datasources", args: {} }]);
+      expect(mcpCalls).toEqual([{ toolId: "grafana.list_datasources", args: {} }]);
+    } finally {
+      await Promise.allSettled([client.close(), server.close()]);
+    }
+  });
+
+  it("marks MCP execute responses as errors exactly when the executor result is not ok", async () => {
+    const codeRuntime: CodeRuntime = {
+      name: "test",
+      isolation: "none",
+      execute: async () => ({
+        ok: false,
+        emitted: [],
+        logs: [],
+        error: {
+          phase: "parse",
+          message: "synthetic parse failure"
+        }
+      })
+    };
+    const server = createTackAgentServer({
+      manifest: grafanaManifest(),
+      runtime: fakeRuntime([]),
+      codeRuntime
+    });
+    const client = new Client({ name: "tack-test", version: "0.1.0" });
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+
+    await Promise.all([
+      server.connect(serverTransport),
+      client.connect(clientTransport)
+    ]);
+
+    try {
+      const executed = await client.callTool({
+        name: "execute",
+        arguments: {
+          code: "bad"
+        }
+      });
+
+      expect(executed.isError).toBe(true);
+      expect(executed.structuredContent).toMatchObject({
+        status: "error",
+        error: {
+          phase: "parse",
+          message: "synthetic parse failure"
+        },
+        logs: []
+      });
+      expect(extractText(executed.content)).toBe("Error: parse: synthetic parse failure");
+    } finally {
+      await Promise.allSettled([client.close(), server.close()]);
+    }
+  });
+
+  it("formats MCP execute content without dumping the full execution envelope", async () => {
+    const codeRuntime: CodeRuntime = {
+      name: "test",
+      isolation: "none",
+      execute: async () => ({
+        ok: true,
+        result: { final: true },
+        emitted: [
+          "plain emitted output",
+          { type: "text", text: "native MCP text block" },
+          { rows: [1, 2, 3] }
+        ],
+        logs: ["first log", "second log"]
+      })
+    };
+    const server = createTackAgentServer({
+      manifest: grafanaManifest(),
+      runtime: fakeRuntime([]),
+      codeRuntime
+    });
+    const client = new Client({ name: "tack-test", version: "0.1.0" });
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+
+    await Promise.all([
+      server.connect(serverTransport),
+      client.connect(clientTransport)
+    ]);
+
+    try {
+      const executed = await client.callTool({
+        name: "execute",
+        arguments: { code: "emit('x'); return { final: true };" }
+      });
+
+      expect(executed.content).toEqual([
+        { type: "text", text: "plain emitted output" },
+        { type: "text", text: "native MCP text block" },
+        { type: "text", text: JSON.stringify({ rows: [1, 2, 3] }, null, 2) },
+        { type: "text", text: "Logs:\nfirst log\nsecond log" }
+      ]);
+      expect(extractText(executed.content)).not.toContain('"executionId"');
+      expect(executed.structuredContent).toMatchObject({
+        status: "completed",
+        result: { final: true },
+        emitted: 3,
+        logs: ["first log", "second log"]
+      });
+      expect(executed.structuredContent).not.toHaveProperty("executionId");
+      expect(executed.structuredContent).not.toHaveProperty("trace");
+    } finally {
+      await Promise.allSettled([client.close(), server.close()]);
+    }
+  });
+
+  it("truncates long MCP execute text previews", async () => {
+    const codeRuntime: CodeRuntime = {
+      name: "test",
+      isolation: "none",
+      execute: async () => ({
+        ok: true,
+        result: "x".repeat(40_000),
+        emitted: [],
+        logs: []
+      })
+    };
+    const server = createTackAgentServer({
+      manifest: grafanaManifest(),
+      runtime: fakeRuntime([]),
+      codeRuntime
+    });
+    const client = new Client({ name: "tack-test", version: "0.1.0" });
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+
+    await Promise.all([
+      server.connect(serverTransport),
+      client.connect(clientTransport)
+    ]);
+
+    try {
+      const executed = await client.callTool({
+        name: "execute",
+        arguments: { code: "return 'x'.repeat(40000);" }
+      });
+
+      const text = extractText(executed.content);
+      expect(text.length).toBeLessThan(31_000);
+      expect(text).toContain("[truncated 10000 chars]");
+      expect(executed.structuredContent).toMatchObject({
+        status: "completed",
+        result: "x".repeat(40_000)
+      });
+    } finally {
+      await Promise.allSettled([client.close(), server.close()]);
+    }
+  });
+
+  it("truncates long MCP execute error previews", async () => {
+    const codeRuntime: CodeRuntime = {
+      name: "test",
+      isolation: "none",
+      execute: async () => ({
+        ok: false,
+        emitted: [],
+        logs: [],
+        error: {
+          phase: "runtime",
+          message: "x".repeat(40_000)
+        }
+      })
+    };
+    const server = createTackAgentServer({
+      manifest: grafanaManifest(),
+      runtime: fakeRuntime([]),
+      codeRuntime
+    });
+    const client = new Client({ name: "tack-test", version: "0.1.0" });
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+
+    await Promise.all([
+      server.connect(serverTransport),
+      client.connect(clientTransport)
+    ]);
+
+    try {
+      const executed = await client.callTool({
+        name: "execute",
+        arguments: { code: "throw new Error('x')" }
+      });
+
+      const text = extractText(executed.content);
+      expect(executed.isError).toBe(true);
+      expect(text.length).toBeLessThan(31_000);
+      expect(text).toContain("Error: runtime: ");
+      expect(text).toContain("[truncated ");
+      expect(executed.structuredContent).toMatchObject({
+        status: "error",
+        error: {
+          phase: "runtime",
+          message: "x".repeat(40_000)
+        },
+        logs: []
+      });
+    } finally {
+      await Promise.allSettled([client.close(), server.close()]);
+    }
+  });
+
+  it("renders emitted text files as MCP text with a 64k file preview cap", async () => {
+    const fileText = "x".repeat(70_000);
+    const codeRuntime: CodeRuntime = {
+      name: "test",
+      isolation: "none",
+      execute: async () => ({
+        ok: true,
+        result: undefined,
+        emitted: [{
+          _tag: "ToolFile",
+          name: "datasources.json",
+          mimeType: "application/json",
+          encoding: "base64",
+          data: Buffer.from(fileText, "utf8").toString("base64"),
+          byteLength: Buffer.byteLength(fileText)
+        }],
+        logs: []
+      })
+    };
+    const server = createTackAgentServer({
+      manifest: grafanaManifest(),
+      runtime: fakeRuntime([]),
+      codeRuntime
+    });
+    const client = new Client({ name: "tack-test", version: "0.1.0" });
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+
+    await Promise.all([
+      server.connect(serverTransport),
+      client.connect(clientTransport)
+    ]);
+
+    try {
+      const executed = await client.callTool({
+        name: "execute",
+        arguments: { code: "emit(file); return undefined;" }
+      });
+
+      expect(executed.content[0]).toEqual({
+        type: "text",
+        text: `File output: datasources.json (application/json, ${Buffer.byteLength(fileText)} bytes)`
+      });
+      const text = extractText(executed.content);
+      expect(text).toContain("File output: datasources.json (application/json, 70000 bytes)");
+      expect(text).toContain("x".repeat(64_000));
+      expect(text).toContain("[truncated 6000 characters]");
+      expect(text).not.toContain("[truncated 40000 chars]");
+      expect(executed.structuredContent).toMatchObject({
+        status: "completed",
+        result: null,
+        emitted: 1,
+        logs: []
+      });
+      expect(executed.structuredContent).not.toHaveProperty("trace");
+    } finally {
+      await Promise.allSettled([client.close(), server.close()]);
+    }
+  });
+
+  it("keeps long Grafana MCP outputs concise while preserving structured content", async () => {
+    const calls: Array<{ toolId: string; args: unknown }> = [];
+    const datasources = Array.from({ length: 1_000 }, (_, index) => ({
+      id: index,
+      uid: `datasource-${index}`,
+      name: `Production datasource ${index}`,
+      type: "prometheus",
+      url: `https://grafana.example.com/datasources/${index}`,
+      access: "proxy"
+    }));
+    const runtime: TackRuntime = {
+      invoke: async (toolId, args) => {
+        calls.push({ toolId, args });
+        return createTackResult({
+          content: [{ type: "text", text: JSON.stringify({ datasources }) }],
+          structuredContent: { datasources },
+          isError: false
+        });
+      },
+      close: async () => {}
+    };
+    const server = createTackAgentServer({
+      manifest: grafanaManifest(),
+      runtime,
+      codeRuntime: createQuickJSRuntime({ timeoutMs: 5_000 })
+    });
+    const client = new Client({ name: "tack-test", version: "0.1.0" });
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+
+    await Promise.all([
+      server.connect(serverTransport),
+      client.connect(clientTransport)
+    ]);
+
+    try {
+      const executed = await client.callTool({
+        name: "execute",
+        arguments: {
+          code: "return tools.grafana.datasources.list();"
+        }
+      });
+
+      const text = extractText(executed.content);
+      expect(text.length).toBeLessThan(31_000);
+      expect(text).toContain("[truncated ");
+      expect(text).toContain("Production datasource 0");
+      expect(text).not.toContain('"executionId"');
+      expect(text).not.toContain('"trace"');
+      expect(executed.isError).toBeUndefined();
+      expect(executed.structuredContent).toMatchObject({
+        status: "completed",
+        result: {
+          ok: true,
+          data: {
+            datasources: expect.arrayContaining([
+              expect.objectContaining({ uid: "datasource-999" })
+            ])
+          }
+        },
+        logs: []
+      });
+      expect(executed.structuredContent).not.toHaveProperty("executionId");
+      expect(executed.structuredContent).not.toHaveProperty("trace");
+      expect(calls).toEqual([{ toolId: "grafana.list_datasources", args: {} }]);
+    } finally {
+      await Promise.allSettled([client.close(), server.close()]);
+    }
+  });
+
+  it("renders thrown execute defects as opaque MCP tool errors", async () => {
+    const codeRuntime: CodeRuntime = {
+      name: "test",
+      isolation: "none",
+      execute: async () => {
+        throw new Error("secret internal detail");
+      }
+    };
+    const server = createTackAgentServer({
+      manifest: grafanaManifest(),
+      runtime: fakeRuntime([]),
+      codeRuntime
+    });
+    const client = new Client({ name: "tack-test", version: "0.1.0" });
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+
+    await Promise.all([
+      server.connect(serverTransport),
+      client.connect(clientTransport)
+    ]);
+
+    try {
+      const executed = await client.callTool({
+        name: "execute",
+        arguments: { code: "throw new Error('secret')" }
+      });
+
+      expect(executed.isError).toBe(true);
+      expect(extractText(executed.content)).toBe("Error: runtime: Internal execute error");
+      expect(extractText(executed.content)).not.toContain("secret");
+      expect(executed.structuredContent).toMatchObject({
+        status: "error",
+        error: {
+          phase: "runtime",
+          message: "Internal execute error"
+        },
+        logs: []
+      });
+    } finally {
+      await Promise.allSettled([client.close(), server.close()]);
+    }
+  });
+
+  it("creates agent servers without invoking optional option accessors", async () => {
+    const options = {
+      manifest: grafanaManifest(),
+      runtime: fakeRuntime([]),
+      codeRuntime: createQuickJSRuntime({ timeoutMs: 5_000 })
+    };
+    Object.defineProperty(options, "policy", {
+      enumerable: true,
+      get() {
+        throw new Error("policy getter should not run");
+      }
+    });
+    Object.defineProperty(options, "onAuditEvent", {
+      enumerable: true,
+      get() {
+        throw new Error("audit getter should not run");
+      }
+    });
+    const server = createTackAgentServer(options);
+    const client = new Client({ name: "tack-test", version: "0.1.0" });
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+
+    await Promise.all([
+      server.connect(serverTransport),
+      client.connect(clientTransport)
+    ]);
+
+    try {
+      const listed = await client.listTools();
+      expect(listed.tools.map((tool) => tool.name).sort()).toEqual(["execute", "guide"]);
+    } finally {
+      await Promise.allSettled([client.close(), server.close()]);
+    }
+  });
+
+  it("exposes execute and guide as the model-facing tools", async () => {
+    const calls: Array<{ toolId: string; args: unknown }> = [];
+    const server = createTackAgentServer({
+      manifest: grafanaManifest(),
+      runtime: fakeRuntime(calls),
+      codeRuntime: createQuickJSRuntime({ timeoutMs: 5_000 })
+    });
+    const client = new Client({ name: "tack-test", version: "0.1.0" });
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+
+    await Promise.all([
+      server.connect(serverTransport),
+      client.connect(clientTransport)
+    ]);
+
+    try {
+      const listed = await client.listTools();
+      expect(listed.tools.map((tool) => tool.name).sort()).toEqual(["execute", "guide"]);
+      expect(listed.tools.find((tool) => tool.name === "execute")?.description)
+        .toContain("## Available namespaces");
+      expect(listed.tools.find((tool) => tool.name === "execute")?.description)
+        .toContain('guide({ name: "execute" })');
+      expect(listed.tools.find((tool) => tool.name === "execute")?.description)
+        .not.toContain("## Workflow");
+
+      await expect(client.callTool({
+        name: "search",
+        arguments: { query: "datasources" }
+      })).rejects.toThrow();
+
+      const executed = await client.callTool({
+        name: "execute",
+        arguments: {
+          code: [
+            "const matches = await tools.search({ query: 'datasources' });",
+            "const datasources = await tools.grafana.datasources.list();",
+            "return { matches, datasources };"
+          ].join("\n")
+        }
+      });
+      expect(executed.structuredContent).toMatchObject({
+        status: "completed",
+        result: {
+          matches: {
+            items: [expect.objectContaining({
+              path: "grafana.datasources.list",
+              namespace: "grafana"
+            })]
+          },
+          datasources: {
+            ok: true,
+            data: { toolId: "grafana.list_datasources" }
+          }
+        }
+      });
+      expect(calls).toEqual([{ toolId: "grafana.list_datasources", args: {} }]);
+
+      const executeGuide = await client.callTool({
+        name: "guide",
+        arguments: { name: "execute" }
+      });
+      expect(extractText(executeGuide.content)).toContain("## Workflow");
+      expect(executeGuide.structuredContent).toBeUndefined();
+    } finally {
+      await Promise.allSettled([client.close(), server.close()]);
+    }
+  });
+
+  it("trims execute code input before running it", async () => {
+    let receivedCode = "";
+    const codeRuntime: CodeRuntime = {
+      name: "test",
+      isolation: "none",
+      execute: async ({ code }) => {
+        receivedCode = code;
+        return {
+          ok: true,
+          result: code,
+          emitted: [],
+          logs: []
+        };
+      }
+    };
+    const server = createTackAgentServer({
+      manifest: grafanaManifest(),
+      runtime: fakeRuntime([]),
+      codeRuntime
+    });
+    const client = new Client({ name: "tack-test", version: "0.1.0" });
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+
+    await Promise.all([
+      server.connect(serverTransport),
+      client.connect(clientTransport)
+    ]);
+
+    try {
+      await client.callTool({
+        name: "execute",
+        arguments: {
+          code: "  return 1;  "
+        }
+      });
+      expect(receivedCode).toBe("return 1;");
+    } finally {
+      await Promise.allSettled([client.close(), server.close()]);
+    }
+  });
+
+  it("enforces policy through sandbox search and execute", async () => {
+    const calls: Array<{ toolId: string; args: unknown }> = [];
+    const audits: unknown[] = [];
+    const server = createTackAgentServer({
+      manifest: grafanaManifest(),
+      runtime: fakeRuntime(calls),
+      codeRuntime: createQuickJSRuntime({ timeoutMs: 5_000 }),
+      policy: {
+        deniedOperations: ["grafana.alerting.*"]
+      },
+      onAuditEvent: (event) => audits.push(event)
+    });
+    const client = new Client({ name: "tack-test", version: "0.1.0" });
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+
+    await Promise.all([
+      server.connect(serverTransport),
+      client.connect(clientTransport)
+    ]);
+
+    try {
+      const search = await client.callTool({
+        name: "execute",
+        arguments: {
+          code: "return tools.search({ query: 'rules' });"
+        }
+      });
+      expect(search.structuredContent).toMatchObject({
+        status: "completed",
+        result: { items: [] }
+      });
+
+      const executed = await client.callTool({
+        name: "execute",
+        arguments: {
+          code: "return tools.grafana.alerting.rules.list();"
+        }
+      });
+      expect(executed.isError).toBeUndefined();
+      expect(executed.structuredContent).toMatchObject({
+        status: "completed",
+        result: {
+          ok: false,
+          error: {
+            message: expect.stringContaining("denied by policy")
+          }
+        }
+      });
+      expect(calls).toEqual([]);
+      expect(audits).toEqual([
+        expect.objectContaining({
+          type: "tool_call",
+          path: "grafana.alerting.rules.list",
+          allowed: false,
+          ok: false
+        })
+      ]);
+    } finally {
+      await Promise.allSettled([client.close(), server.close()]);
+    }
+  });
+});
+
+function extractText(content: unknown): string {
+  if (!Array.isArray(content)) {
+    return "";
+  }
+
+  return content
+    .flatMap((part) =>
+      typeof part === "object" &&
+      part !== null &&
+      !Array.isArray(part) &&
+      (part as { readonly type?: unknown }).type === "text" &&
+      typeof (part as { readonly text?: unknown }).text === "string"
+        ? [(part as { readonly text: string }).text]
+        : []
+    )
+    .join("\n");
+}

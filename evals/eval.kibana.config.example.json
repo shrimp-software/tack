@@ -1,0 +1,67 @@
+{
+  "codex": {
+    "bin": "codex",
+    "model": "gpt-5.5",
+    "cd": "${REPO_ROOT}",
+    "flags": [
+      "--json",
+      "--ephemeral",
+      "--skip-git-repo-check",
+      "--ignore-rules",
+      "--sandbox",
+      "read-only"
+    ],
+    "outputSchema": "evals/schemas/final-answer.schema.json",
+    "envFromProcess": [
+      "CODEX_HOME",
+      "OPENAI_API_KEY",
+      "OPENAI_BASE_URL",
+      "OPENAI_ORG_ID",
+      "OPENAI_PROJECT_ID"
+    ],
+    "timeoutMs": 360000
+  },
+  "outputDir": "evals/runs",
+  "cases": [
+    "evals/cases/kibana-log-triage.json"
+  ],
+  "targets": [
+    {
+      "id": "tack-kibana",
+      "mcpName": "tack",
+      "command": "bun",
+      "args": [
+        "run",
+        "--cwd",
+        "packages/cli",
+        "dev",
+        "--",
+        "mcp",
+        "--config",
+        "evals/.local/tack.kibana.config.json"
+      ],
+      "envFromProcess": [
+        "KIBANA_API_KEY"
+      ]
+    },
+    {
+      "id": "kibana-direct",
+      "mcpName": "kibana",
+      "url": "${KIBANA_MCP_URL}",
+      "bearerTokenEnvVar": "KIBANA_API_KEY",
+      "envFromProcess": [
+        "KIBANA_API_KEY"
+      ],
+      "enabled": false
+    },
+    {
+      "id": "executor-kibana",
+      "mcpName": "executor",
+      "command": "executor",
+      "args": [
+        "mcp"
+      ],
+      "enabled": false
+    }
+  ]
+}

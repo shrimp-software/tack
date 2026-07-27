@@ -1,0 +1,40 @@
+{
+  "name": "@tack/cli",
+  "version": "0.1.0",
+  "type": "module",
+  "bin": {
+    "tack": "./dist/index.js"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "rm -rf dist && tsc -p tsconfig.json && node scripts/make-bin-executable.mjs",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run --passWithNoTests",
+    "dev": "tsx src/index.ts"
+  },
+  "dependencies": {
+    "@tack/agent": "workspace:*",
+    "@tack/codemode": "workspace:*",
+    "@tack/core": "workspace:*",
+    "@tack/generator": "workspace:*",
+    "@tack/mcp": "workspace:*",
+    "@tack/runtime-quickjs": "workspace:*",
+    "@tack/runtime-workerd": "workspace:*",
+    "@tack/service": "workspace:*",
+    "commander": "^15.0.0"
+  },
+  "devDependencies": {
+    "execa": "^10.0.0",
+    "tsx": "^4.23.1",
+    "typescript": "^7.0.2",
+    "vitest": "^4.1.10"
+  }
+}

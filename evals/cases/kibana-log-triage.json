@@ -1,0 +1,11 @@
+{
+  "id": "kibana-log-triage",
+  "title": "Triage seeded Kibana log anomalies",
+  "prompt": "Use the connected Kibana MCP tools to inspect the tack-eval-logs data. Identify the top services, error spikes, suspicious status codes, and any high-latency windows. Return concise JSON with fields: summary, services, anomalies, queriesUsed, ergonomics.",
+  "expectations": [
+    "Uses MCP tools rather than guessing from prompt text.",
+    "Mentions the tack-eval-logs index or data view when visible.",
+    "Keeps long tool responses summarized instead of dumping raw rows.",
+    "Includes ergonomics notes about discovery, schemas, output size, or missing affordances."
+  ]
+}

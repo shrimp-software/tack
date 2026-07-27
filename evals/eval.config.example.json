@@ -1,0 +1,56 @@
+{
+  "codex": {
+    "bin": "codex",
+    "model": "gpt-5.5",
+    "cd": "${REPO_ROOT}",
+    "flags": [
+      "--json",
+      "--ephemeral",
+      "--skip-git-repo-check",
+      "--ignore-rules",
+      "--sandbox",
+      "read-only"
+    ],
+    "outputSchema": "evals/schemas/final-answer.schema.json",
+    "envFromProcess": [
+      "CODEX_HOME",
+      "OPENAI_API_KEY",
+      "OPENAI_BASE_URL",
+      "OPENAI_ORG_ID",
+      "OPENAI_PROJECT_ID"
+    ],
+    "timeoutMs": 240000
+  },
+  "outputDir": "evals/runs",
+  "cases": [
+    "evals/cases/grafana-datasources-smoke.json"
+  ],
+  "targets": [
+    {
+      "id": "tack",
+      "mcpName": "tack",
+      "command": "bun",
+      "args": [
+        "run",
+        "--cwd",
+        "packages/cli",
+        "dev",
+        "--",
+        "mcp",
+        "--config",
+        "${TACK_CONFIG}"
+      ],
+      "envFromProcess": [
+        "GRAFANA_URL",
+        "GRAFANA_SERVICE_ACCOUNT_TOKEN"
+      ]
+    },
+    {
+      "id": "executor",
+      "mcpName": "executor",
+      "command": "executor",
+      "args": ["mcp"],
+      "enabled": false
+    }
+  ]
+}
