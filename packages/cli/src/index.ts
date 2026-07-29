@@ -9,7 +9,6 @@ import {
   DEFAULT_OUTPUT_DIR,
   createDefaultConfig,
   findOperation,
-  formatTackError,
   listOperations,
   loadConfigPromise,
   operationArgs,
@@ -23,6 +22,14 @@ import { createMcpRuntime, discoverMcpManifestPromise } from "@tack/mcp";
 import { createQuickJSRuntime } from "@tack/runtime-quickjs";
 import { createWorkerdRuntime } from "@tack/runtime-workerd";
 import { listenTackHttpService } from "@tack/service";
+import { formatCliError } from "./cli-output.js";
+import { runDoctor } from "./doctor.js";
+import {
+  defaultSkillOutputDirectory,
+  installTackSkill,
+  tackSkillFiles,
+  tackSkillMarkdown
+} from "./skill.js";
 
 const program = new Command();
 const DEFAULT_DISCOVERY_CACHE_PATH = ".tack/discovery-cache.json";
@@ -116,6 +123,26 @@ program
   );
 
 program
+  .command("doctor")
+  .description("Validate the Tack CLI environment, config, and MCP discovery")
+  .option("-c, --config <path>", "config path", DEFAULT_CONFIG_PATH)
+  .option("--no-discovery", "skip live MCP discovery")
+  .action(async (options: { config: string; discovery: boolean }) =>
+    run(async () => {
+      const report = await runDoctor({
+        config: options.config,
+        discovery: options.discovery
+      });
+      for (const line of report.lines) {
+        console.log(line);
+      }
+      if (!report.ok) {
+        process.exitCode = 1;
+      }
+    })
+  );
+
+program
   .command("call")
   .description("Invoke an inferred operation path or canonical Tack tool ID")
   .argument("<path>")
@@ -170,7 +197,32 @@ program
         } finally {
           await runtime.close();
         }
-      })
+    })
+  );
+
+const skill = program
+  .command("skill")
+  .description("Print or install the Codex skill for Tack");
+
+skill
+  .command("print")
+  .description("Print the Tack Codex skill SKILL.md")
+  .action(() => {
+    console.log(tackSkillMarkdown());
+  });
+
+skill
+  .command("install")
+  .description("Install the Tack Codex skill into a skills directory")
+  .option("-o, --out <dir>", "skills output directory")
+  .option("--force", "overwrite an existing Tack skill")
+  .action(async (options: { out?: string; force: boolean }) =>
+    run(async () => {
+      const outDir = options.out ?? defaultSkillOutputDirectory();
+      const skillDir = await installTackSkill(outDir, { force: options.force });
+      console.log(`Installed Tack skill at ${skillDir}`);
+      console.log(`Wrote ${tackSkillFiles().map((file) => file.path).join(", ")}`);
+    })
   );
 
 program
@@ -275,7 +327,7 @@ async function run(work: () => Promise<void>): Promise<void> {
   try {
     await work();
   } catch (error) {
-    console.error(formatTackError(error));
+    console.error(formatCliError(error));
     process.exitCode = 1;
   }
 }

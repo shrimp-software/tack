@@ -25,6 +25,16 @@ describe("CLI", () => {
     const configPath = join(tmpPath, "tack.config.json");
     const outDir = join(tmpPath, ".tack", "generated");
     const auditPath = join(tmpPath, ".tack", "audit.jsonl");
+    const skillOutDir = join(tmpPath, "skills");
+
+    const missingDoctor = await runCli([
+      "doctor",
+      "--config",
+      configPath,
+      "--no-discovery"
+    ], tmpPath, { reject: false });
+    expect(missingDoctor.exitCode).toBe(1);
+    expect(missingDoctor.stdout).toContain("[fail] Config not found");
 
     await runCli(["init", "--config", configPath], tmpPath);
     const config = JSON.parse(await readFile(configPath, "utf8"));
@@ -48,6 +58,45 @@ describe("CLI", () => {
       dir: outDir
     };
     await writeFile(configPath, `${JSON.stringify(config, null, 2)}\n`, "utf8");
+
+    const staticDoctor = await runCli([
+      "doctor",
+      "--config",
+      configPath,
+      "--no-discovery"
+    ], tmpPath);
+    expect(staticDoctor.stdout).toContain("[ok] Found config");
+    expect(staticDoctor.stdout).toContain("[warn] Skipped live MCP discovery");
+
+    const liveDoctor = await runCli(["doctor", "--config", configPath], tmpPath);
+    expect(liveDoctor.stdout).toContain("[ok] Discovered");
+
+    const skillPrint = await runCli(["skill", "print"], tmpPath);
+    expect(skillPrint.stdout).toContain("name: tack");
+    expect(skillPrint.stdout).toContain("tack doctor");
+
+    const skillInstall = await runCli(["skill", "install", "--out", skillOutDir], tmpPath);
+    expect(skillInstall.stdout).toContain(join(skillOutDir, "tack"));
+    const skillMarkdown = await readFile(join(skillOutDir, "tack", "SKILL.md"), "utf8");
+    expect(skillMarkdown).toContain("description: Work with Tack");
+    expect(skillMarkdown).toContain("tack inspect");
+    const openAiYaml = await readFile(join(skillOutDir, "tack", "agents", "openai.yaml"), "utf8");
+    expect(openAiYaml).toContain("display_name: Tack");
+    const duplicateSkillInstall = await runCli(
+      ["skill", "install", "--out", skillOutDir],
+      tmpPath,
+      { reject: false }
+    );
+    expect(duplicateSkillInstall.exitCode).toBe(1);
+    expect(duplicateSkillInstall.stderr).toContain("Refusing to overwrite existing skill");
+    const forcedSkillInstall = await runCli([
+      "skill",
+      "install",
+      "--out",
+      skillOutDir,
+      "--force"
+    ], tmpPath);
+    expect(forcedSkillInstall.stdout).toContain(join(skillOutDir, "tack"));
 
     const serve = await runCli(["serve", "--config", configPath], tmpPath, { reject: false });
     expect(serve.exitCode).toBe(1);
