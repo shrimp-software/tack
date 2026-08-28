@@ -22,6 +22,11 @@ export interface RenderCodeModeUserFunctionSourceInput {
   readonly toolsPrelude: string;
   readonly fetchErrorMessage: string;
   readonly strict?: boolean;
+  /**
+   * Session mode: give the wrapper a `__scope` parameter so a caller can pass a
+   * persistent scope object. `code` is expected to be already scope-rewritten.
+   */
+  readonly scopeParam?: boolean;
 }
 
 export function normalizeCodeRuntimeExecuteInput(input: unknown): NormalizeCodeRuntimeExecuteInputResult {
@@ -63,7 +68,9 @@ export function validateCodeModeUserCode(code: string): void {
     { pattern: /["']constructor["']/u, label: "constructor escape" },
     { pattern: /\b__proto__\b/u, label: "__proto__ escape" },
     { pattern: /\bprototype\b/u, label: "prototype escape" },
-    { pattern: /\bWebAssembly\b/u, label: "WebAssembly" }
+    { pattern: /\bWebAssembly\b/u, label: "WebAssembly" },
+    { pattern: /\b__tack[A-Za-z]/u, label: "reserved __tack identifier" },
+    { pattern: /\b__scope\b/u, label: "reserved __scope identifier" }
   ];
 
   const blocked = denied.find(({ pattern }) => pattern.test(code));
@@ -73,8 +80,9 @@ export function validateCodeModeUserCode(code: string): void {
 }
 
 export function renderCodeModeUserFunctionSource(input: RenderCodeModeUserFunctionSourceInput): string {
+  const scopeParam = input.scopeParam ? ", __scope: Record<string, unknown>" : "";
   return `
-async function __tackUser(__tackInvoke: (path: string, args?: unknown) => Promise<unknown>, console: unknown, emit: (value: unknown) => void) {
+async function __tackUser(__tackInvoke: (path: string, args?: unknown) => Promise<unknown>, console: unknown, emit: (value: unknown) => void${scopeParam}) {
 ${input.strict ? '  "use strict";\n' : ""}${input.toolsPrelude}
   const RUNNER_TOKEN = undefined;
   const USER_CODE = undefined;

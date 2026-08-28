@@ -19,6 +19,7 @@ import {
   type CodeRuntime,
   type CreateExecutionEngineOptions,
   type ExecutionResult,
+  type ExecutionSession,
   type OperationPolicy,
   type TraceSink
 } from "@tack/codemode";
@@ -48,6 +49,7 @@ export function createTackAgentServer(
     ...(onAuditEvent ? { onAuditEvent } : {})
   };
   const engine = createExecutionEngine(engineOptions);
+  const sessions = new SessionStore(engine);
   const server = new McpServer(
     { name: "tack", version: "0.1.0" },
     { capabilities: { tools: {} } }
@@ -59,27 +61,65 @@ export function createTackAgentServer(
       title: "Execute Tack code",
       description: engine.getDescription(),
       inputSchema: z.object({
-        code: z.string().trim().min(1)
+        code: z.string().trim().min(1),
+        session: z
+          .string()
+          .optional()
+          .describe("Run this cell in a persistent session (from the `session` tool). Scope carries across cells.")
       })
     },
-    async ({ code }, ctx) => {
+    async ({ code, session }, ctx) => {
       const onTrace = progressTraceSink(ctx);
-      const perCall = onTrace
-        ? createExecutionEngine({ ...engineOptions, onTrace })
-        : engine;
       try {
+        if (session !== undefined) {
+          const entry = sessions.get(session);
+          if (!entry) {
+            return formatExecuteMcpResult(sessionError(`Unknown session "${session}"`));
+          }
+          return formatExecuteMcpResult(await entry.exec(code, onTrace ? { onTrace } : undefined));
+        }
+        const perCall = onTrace ? createExecutionEngine({ ...engineOptions, onTrace }) : engine;
         return formatExecuteMcpResult(await perCall.execute(code));
       } catch {
-        return formatExecuteMcpResult({
-          ok: false,
-          emitted: [],
-          logs: [],
-          error: {
-            phase: "runtime",
-            message: "Internal execute error"
-          }
-        });
+        return formatExecuteMcpResult(sessionError("Internal execute error"));
       }
+    }
+  );
+
+  server.registerTool(
+    "session",
+    {
+      title: "Open or close a code-mode session",
+      description: [
+        "Open a persistent code-mode session, then pass its id to `execute` as `session`.",
+        "Top-level `const`/`let`/`function`/`class` from one cell are visible to the next.",
+        "Call with `{ close }` to release a session; sessions also expire when idle."
+      ].join("\n"),
+      inputSchema: z.object({
+        close: z.string().optional().describe("Session id to close.")
+      })
+    },
+    async ({ close }) => {
+      if (close !== undefined) {
+        const closed = await sessions.close(close);
+        return {
+          content: [{ type: "text", text: closed ? `Closed ${close}` : `No session "${close}"` }],
+          ...(closed ? {} : { isError: true as const })
+        };
+      }
+
+      if (!engine.supportsSessions) {
+        return {
+          content: [{ type: "text", text: "This server's runtime does not support sessions." }],
+          isError: true
+        };
+      }
+
+      const id = await sessions.open();
+      return {
+        content: [{ type: "text", text: id }],
+        structuredContent: { session: id }
+      };
     }
   );
 
@@ -118,7 +158,69 @@ export function createTackAgentServer(
     }
   );
 
+  const previousOnClose = server.server.onclose;
+  server.server.onclose = () => {
+    void sessions.closeAll();
+    previousOnClose?.();
+  };
+
   return server;
+}
+
+const SESSION_IDLE_MS = 5 * 60_000;
+const MAX_SESSIONS = 8;
+
+/** Connection-scoped store of live {@link ExecutionSession}s with idle expiry. */
+class SessionStore {
+  private readonly entries = new Map<string, { session: ExecutionSession; timer: ReturnType<typeof setTimeout> }>();
+
+  constructor(private readonly engine: ReturnType<typeof createExecutionEngine>) {}
+
+  async open(): Promise<string> {
+    if (this.entries.size >= MAX_SESSIONS) {
+      throw new Error(`Too many open sessions (max ${MAX_SESSIONS})`);
+    }
+    const session = await this.engine.createSession();
+    this.entries.set(session.id, { session, timer: this.arm(session.id) });
+    return session.id;
+  }
+
+  get(id: string): ExecutionSession | undefined {
+    const entry = this.entries.get(id);
+    if (!entry) {
+      return undefined;
+    }
+    clearTimeout(entry.timer);
+    entry.timer = this.arm(id);
+    return entry.session;
+  }
+
+  async close(id: string): Promise<boolean> {
+    const entry = this.entries.get(id);
+    if (!entry) {
+      return false;
+    }
+    clearTimeout(entry.timer);
+    this.entries.delete(id);
+    await entry.session.close();
+    return true;
+  }
+
+  async closeAll(): Promise<void> {
+    await Promise.all([...this.entries.keys()].map((id) => this.close(id)));
+  }
+
+  private arm(id: string): ReturnType<typeof setTimeout> {
+    const timer = setTimeout(() => {
+      void this.close(id);
+    }, SESSION_IDLE_MS);
+    timer.unref?.();
+    return timer;
+  }
+}
+
+function sessionError(message: string): ExecutionResult {
+  return { ok: false, emitted: [], logs: [], error: { phase: "runtime", message } };
 }
 
 /**

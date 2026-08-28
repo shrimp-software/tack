@@ -90,9 +90,26 @@ export interface CodeRuntimeExecuteInput {
   readonly toolsPrelude: string;
 }
 
+/**
+ * A long-lived runtime context. Successive {@link CodeSession.exec} calls share
+ * one scope — top-level `const`/`let`/`function`/`class` from one cell are
+ * visible to the next — until {@link CodeSession.close}.
+ */
+export interface CodeSession {
+  exec(input: CodeRuntimeExecuteInput, signal?: AbortSignal): Promise<ExecutionResult>;
+  close(): Promise<void>;
+}
+
+export interface CodeSessionOptions {
+  /** Wall-clock budget across all cells; the session rejects `exec` once exceeded. */
+  readonly maxLifetimeMs?: number;
+}
+
 export interface CodeRuntime {
   readonly name: string;
   readonly isolation: "none" | "vm" | "process";
   readonly timeoutMs?: number;
   execute(input: CodeRuntimeExecuteInput, signal?: AbortSignal): Promise<ExecutionResult>;
+  /** Present only on runtimes that support stateful sessions (QuickJS). */
+  createSession?(options?: CodeSessionOptions): Promise<CodeSession>;
 }

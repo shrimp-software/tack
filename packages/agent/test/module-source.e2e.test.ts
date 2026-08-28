@@ -67,7 +67,7 @@ describe("module source over MCP (e2e)", () => {
     const agent = await connectAgent();
     try {
       const { tools } = await agent.client.listTools();
-      expect(tools.map((tool) => tool.name).sort()).toEqual(["execute", "guide"]);
+      expect(tools.map((tool) => tool.name).sort()).toEqual(["execute", "guide", "session"]);
     } finally {
       await agent.close();
     }
@@ -169,6 +169,47 @@ describe("module source over MCP (e2e)", () => {
         status: "completed",
         result: { ok: false }
       });
+    } finally {
+      await agent.close();
+    }
+  });
+
+  it("carries scope across execute cells in a session", async () => {
+    const agent = await connectAgent();
+    try {
+      const opened = await agent.client.callTool({ name: "session", arguments: {} });
+      const sessionId = (opened.structuredContent as { session: string }).session;
+      expect(sessionId).toMatch(/^s_/);
+
+      const first = await agent.client.callTool({
+        name: "execute",
+        arguments: {
+          session: sessionId,
+          code: `const doc = await tools.call("docs.read", { slug: "architecture" });\nconst title = doc.data.title;`
+        }
+      });
+      expect(first.isError).toBeUndefined();
+
+      const second = await agent.client.callTool({
+        name: "execute",
+        arguments: { session: sessionId, code: `return title.toUpperCase();` }
+      });
+      expect(second.structuredContent).toMatchObject({
+        status: "completed",
+        result: "ARCHITECTURE"
+      });
+
+      const closed = await agent.client.callTool({
+        name: "session",
+        arguments: { close: sessionId }
+      });
+      expect(closed.isError).toBeUndefined();
+
+      const afterClose = await agent.client.callTool({
+        name: "execute",
+        arguments: { session: sessionId, code: "return 1;" }
+      });
+      expect(afterClose.isError).toBe(true);
     } finally {
       await agent.close();
     }

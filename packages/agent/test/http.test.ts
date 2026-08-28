@@ -78,7 +78,7 @@ describe("hosted MCP HTTP server", () => {
     await client.connect(transport);
     try {
       const listed = await client.listTools();
-      expect(listed.tools.map((tool) => tool.name).sort()).toEqual(["execute", "guide"]);
+      expect(listed.tools.map((tool) => tool.name).sort()).toEqual(["execute", "guide", "session"]);
     } finally {
       await client.close();
     }

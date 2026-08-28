@@ -19,10 +19,12 @@
   "dependencies": {
     "@tack/codemode": "workspace:*",
     "@tack/core": "workspace:*",
+    "acorn": "^8.14.0",
     "esbuild": "^0.28.1",
     "quickjs-emscripten": "0.32.0"
   },
   "devDependencies": {
+    "@types/estree": "^1.0.6",
     "typescript": "^7.0.2",
     "vitest": "^4.1.10"
   }

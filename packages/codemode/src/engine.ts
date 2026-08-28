@@ -11,6 +11,9 @@ import type { OperationPolicy } from "./policy.js";
 import { renderToolsPrelude } from "./tools.js";
 import type {
   CodeRuntime,
+  CodeRuntimeExecuteInput,
+  CodeSession,
+  CodeSessionOptions,
   ExecutionResult,
   ExecutionTrace,
   ToolTraceEvent,
@@ -27,9 +30,24 @@ export interface CreateExecutionEngineOptions {
   readonly onTrace?: TraceSink | undefined;
 }
 
+export interface ExecuteOptions {
+  readonly onTrace?: TraceSink | undefined;
+  readonly signal?: AbortSignal | undefined;
+}
+
+/** A stateful code-mode session: `exec` cells share one persistent scope. */
+export interface ExecutionSession {
+  readonly id: string;
+  exec(code: string, options?: ExecuteOptions): Promise<ExecutionResult>;
+  close(): Promise<void>;
+}
+
 export interface ExecutionEngine {
   getDescription(): string;
   execute(code: string, signal?: AbortSignal): Promise<ExecutionResult>;
+  /** Whether the underlying runtime supports {@link ExecutionEngine.createSession}. */
+  readonly supportsSessions: boolean;
+  createSession(options?: CodeSessionOptions): Promise<ExecutionSession>;
 }
 
 export function createExecutionEngine(
@@ -40,43 +58,58 @@ export function createExecutionEngine(
   const codeRuntime = normalizeCodeRuntime(readOwnData(options, "codeRuntime") as CodeRuntime);
   const policy = readOwnData(options, "policy") as OperationPolicy | undefined;
   const onAuditEvent = readOwnData(options, "onAuditEvent") as CreateExecutionEngineOptions["onAuditEvent"];
-  const onTrace = readOwnData(options, "onTrace") as TraceSink | undefined;
+  const defaultOnTrace = readOwnData(options, "onTrace") as TraceSink | undefined;
+
+  const runCell = async (
+    run: (input: CodeRuntimeExecuteInput, signal?: AbortSignal) => Promise<ExecutionResult>,
+    code: string,
+    cellOptions: ExecuteOptions | undefined
+  ): Promise<ExecutionResult> => {
+    const onTrace = cellOptions?.onTrace ?? defaultOnTrace;
+    const executionId = randomUUID();
+    const startedAtMs = Date.now();
+    const startedAt = new Date(startedAtMs).toISOString();
+    const traceEvents: ToolTraceEvent[] = [];
+    const invoker = createTackToolInvoker({
+      manifest,
+      runtime,
+      executionId,
+      ...(policy ? { policy } : {}),
+      onTraceEvent: (event) => {
+        traceEvents.push(event);
+        if (onTrace) {
+          queueMicrotask(() => onTrace(event));
+        }
+      },
+      ...(onAuditEvent ? { onAuditEvent } : {})
+    });
+
+    const result = await run(
+      { code, invoker, toolsPrelude: renderToolsPrelude() },
+      cellOptions?.signal
+    );
+    return {
+      ...result,
+      executionId,
+      trace: summarizeTrace({ runtime: codeRuntime, startedAt, startedAtMs, events: traceEvents })
+    };
+  };
 
   return {
     getDescription: () => createExecuteDescription(manifest, policy),
-    execute: async (code, signal) => {
-      const executionId = randomUUID();
-      const startedAtMs = Date.now();
-      const startedAt = new Date(startedAtMs).toISOString();
-      const traceEvents: ToolTraceEvent[] = [];
-      const invoker = createTackToolInvoker({
-        manifest,
-        runtime,
-        executionId,
-        ...(policy ? { policy } : {}),
-        onTraceEvent: (event) => {
-          traceEvents.push(event);
-          if (onTrace) {
-            queueMicrotask(() => onTrace(event));
-          }
-        },
-        ...(onAuditEvent ? { onAuditEvent } : {})
-      });
-
-      const result = await codeRuntime.execute({
-        code,
-        invoker,
-        toolsPrelude: renderToolsPrelude()
-      }, signal);
+    supportsSessions: typeof codeRuntime.createSession === "function",
+    execute: (code, signal) =>
+      runCell((input, sig) => codeRuntime.execute(input, sig), code, signal ? { signal } : undefined),
+    createSession: async (sessionOptions) => {
+      if (typeof codeRuntime.createSession !== "function") {
+        throw new Error(`Runtime "${codeRuntime.name}" does not support sessions`);
+      }
+      const codeSession = await codeRuntime.createSession(sessionOptions);
+      const id = `s_${randomUUID()}`;
       return {
-        ...result,
-        executionId,
-        trace: summarizeTrace({
-          runtime: codeRuntime,
-          startedAt,
-          startedAtMs,
-          events: traceEvents
-        })
+        id,
+        exec: (code, cellOptions) => runCell((input, sig) => codeSession.exec(input, sig), code, cellOptions),
+        close: () => codeSession.close()
       };
     }
   };
@@ -87,6 +120,7 @@ function normalizeCodeRuntime(runtime: CodeRuntime): CodeRuntime {
   const isolation = readOwnData(runtime, "isolation");
   const timeoutMs = readOwnData(runtime, "timeoutMs");
   const execute = readOwnData(runtime, "execute");
+  const createSession = readOwnData(runtime, "createSession");
   if (typeof execute !== "function") {
     throw new TypeError("Code runtime execute is required");
   }
@@ -95,7 +129,13 @@ function normalizeCodeRuntime(runtime: CodeRuntime): CodeRuntime {
     name: typeof name === "string" ? name : "unknown",
     isolation: isolation === "process" || isolation === "vm" ? isolation : "none",
     ...(typeof timeoutMs === "number" ? { timeoutMs } : {}),
-    execute: (input, signal) => execute.call(runtime, input, signal) as ReturnType<CodeRuntime["execute"]>
+    execute: (input, signal) => execute.call(runtime, input, signal) as ReturnType<CodeRuntime["execute"]>,
+    ...(typeof createSession === "function"
+      ? {
+          createSession: (sessionOptions?: CodeSessionOptions): Promise<CodeSession> =>
+            createSession.call(runtime, sessionOptions) as Promise<CodeSession>
+        }
+      : {})
   };
 }
 

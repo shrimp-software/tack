@@ -292,6 +292,87 @@ return readFile;
   });
 });
 
+describe("quickjs session", () => {
+  it("persists top-level declarations across exec cells", async () => {
+    const runtime = createQuickJSRuntime({ timeoutMs: 5_000 });
+    const session = await runtime.createSession!();
+    try {
+      const first = await session.exec({
+        code: "const nums = [1, 2, 3];\nfunction total(list) { return list.reduce((a, b) => a + b, 0); }\nlet acc = 10;",
+        invoker: fakeInvoker([]),
+        toolsPrelude: renderToolsPrelude()
+      });
+      expect(first.ok).toBe(true);
+
+      const second = await session.exec({
+        code: "return total(nums) + acc;",
+        invoker: fakeInvoker([]),
+        toolsPrelude: renderToolsPrelude()
+      });
+      expect(second).toMatchObject({ ok: true, result: 16 });
+    } finally {
+      await session.close();
+    }
+  });
+
+  it("keeps emitted/logs per cell and rejects after close", async () => {
+    const runtime = createQuickJSRuntime({ timeoutMs: 5_000 });
+    const session = await runtime.createSession!();
+
+    const a = await session.exec({
+      code: "console.log('a'); emit(1); const x = 1;",
+      invoker: fakeInvoker([]),
+      toolsPrelude: renderToolsPrelude()
+    });
+    expect(a.emitted).toEqual([1]);
+    expect(a.logs).toEqual(["[log] a"]);
+
+    const b = await session.exec({
+      code: "return x + 1;",
+      invoker: fakeInvoker([]),
+      toolsPrelude: renderToolsPrelude()
+    });
+    expect(b).toMatchObject({ ok: true, result: 2 });
+    expect(b.emitted).toEqual([]);
+    expect(b.logs).toEqual([]);
+
+    await session.close();
+    const afterClose = await session.exec({
+      code: "return 1;",
+      invoker: fakeInvoker([]),
+      toolsPrelude: renderToolsPrelude()
+    });
+    expect(afterClose).toMatchObject({ ok: false, error: { message: "Session is closed" } });
+  });
+
+  it("surfaces a failing cell without poisoning the session scope", async () => {
+    const runtime = createQuickJSRuntime({ timeoutMs: 5_000 });
+    const session = await runtime.createSession!();
+    try {
+      await session.exec({
+        code: "const good = 42;",
+        invoker: fakeInvoker([]),
+        toolsPrelude: renderToolsPrelude()
+      });
+      const bad = await session.exec({
+        code: "const boom = (() => { throw new Error('nope'); })();",
+        invoker: fakeInvoker([]),
+        toolsPrelude: renderToolsPrelude()
+      });
+      expect(bad).toMatchObject({ ok: false, error: { phase: "runtime" } });
+
+      const recover = await session.exec({
+        code: "return good;",
+        invoker: fakeInvoker([]),
+        toolsPrelude: renderToolsPrelude()
+      });
+      expect(recover).toMatchObject({ ok: true, result: 42 });
+    } finally {
+      await session.close();
+    }
+  });
+});
+
 function fakeInvoker(calls: Array<{ path: string; args: unknown }>): ToolInvoker {
   return {
     invoke: ({ path, args }) => {

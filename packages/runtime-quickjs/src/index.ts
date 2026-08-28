@@ -2,6 +2,8 @@ import {
   CodeRuntimeTimeoutError,
   CodeModeParseError,
   type CodeRuntime,
+  type CodeSession,
+  type CodeSessionOptions,
   type ExecuteErrorPhase,
   type ExecutionResult,
   type NormalizedCodeRuntimeExecuteInput,
@@ -21,6 +23,8 @@ import {
   type QuickJSAsyncContext,
   type QuickJSHandle
 } from "quickjs-emscripten";
+
+import { rewriteCellScope } from "./scope-rewrite.js";
 
 export interface QuickJSRuntimeOptions {
   readonly timeoutMs?: number;
@@ -58,7 +62,8 @@ export function createQuickJSRuntime(options: QuickJSRuntimeOptions = {}): CodeR
         limits,
         signal
       });
-    }
+    },
+    createSession: (sessionOptions) => createQuickJSSession(limits, sessionOptions)
   };
 }
 
@@ -230,6 +235,204 @@ async function runUserFunction(state: RuntimeState, userFunctionSource: string):
     disposeHandle(consoleHandle);
     disposeHandle(invokeHandle);
     disposeHandle(functionHandle);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Sessions: one persistent context across many `exec` cells.
+// ---------------------------------------------------------------------------
+
+async function createQuickJSSession(
+  limits: QuickJSLimits,
+  options: CodeSessionOptions | undefined
+): Promise<CodeSession> {
+  const perCellTimeoutMs = Math.max(100, limits.timeoutMs);
+  const maxLifetimeMs =
+    typeof options?.maxLifetimeMs === "number" ? options.maxLifetimeMs : undefined;
+
+  const context = await newAsyncContext();
+  context.runtime.setMemoryLimit(limits.memoryMb * 1024 * 1024);
+  context.runtime.setMaxStackSize(limits.maxStackBytes);
+
+  const scopeHandle = context.newObject();
+  const declaredNames = new Set<string>();
+  const startedAtMs = Date.now();
+
+  let closed = false;
+  let running = false;
+  let cellDeadline = Number.POSITIVE_INFINITY;
+  let cellAbort: AbortSignal | undefined;
+  let cellDeadlineExceeded = false;
+
+  context.runtime.setInterruptHandler(() => {
+    cellDeadlineExceeded = cellDeadlineExceeded || Date.now() > cellDeadline;
+    return closed || cellDeadlineExceeded || Boolean(cellAbort?.aborted);
+  });
+
+  const exec = async (
+    input: NormalizedCodeRuntimeExecuteInput,
+    signal: AbortSignal = new AbortController().signal
+  ): Promise<ExecutionResult> => {
+    if (closed) {
+      return { ok: false, emitted: [], logs: [], error: { phase: "runtime", message: "Session is closed" } };
+    }
+    if (running) {
+      return { ok: false, emitted: [], logs: [], error: { phase: "runtime", message: "Session is already running a cell" } };
+    }
+    if (maxLifetimeMs !== undefined && Date.now() - startedAtMs > maxLifetimeMs) {
+      return { ok: false, emitted: [], logs: [], error: { phase: "timeout", message: `Session exceeded its ${maxLifetimeMs}ms lifetime` } };
+    }
+
+    running = true;
+    const emitted: unknown[] = [];
+    const logs: string[] = [];
+    const state: RuntimeState = {
+      context,
+      invoker: input.invoker,
+      emitted,
+      logs,
+      maxToolCalls: limits.maxToolCalls,
+      maxToolRequestBytes: limits.maxToolRequestBytes,
+      maxToolResponseBytes: limits.maxToolResponseBytes,
+      closed: false,
+      toolCalls: 0
+    };
+
+    cellAbort = signal;
+    cellDeadlineExceeded = false;
+
+    let cellNames: readonly string[] = [];
+    try {
+      throwIfAborted(signal);
+      const transpiled = await transpileSessionCell({
+        code: input.code,
+        toolsPrelude: input.toolsPrelude,
+        priorNames: declaredNames
+      });
+      cellNames = transpiled.declaredNames;
+
+      cellDeadline = Date.now() + perCellTimeoutMs;
+      const result = await withTimeout({
+        promise: runSessionCell(state, transpiled.source, scopeHandle),
+        timeoutMs: perCellTimeoutMs,
+        signal,
+        message: `QuickJS session cell timed out after ${perCellTimeoutMs}ms`
+      });
+
+      for (const name of cellNames) {
+        declaredNames.add(name);
+      }
+
+      return jsonExecutionResult({
+        body: { ok: true, ...(result === undefined ? {} : { result }), emitted, logs },
+        maxOutputBytes: limits.maxOutputBytes,
+        outputLogs: logs
+      });
+    } catch (error) {
+      if (isAbortError(error, signal)) {
+        throw error;
+      }
+      return jsonExecutionResult({
+        body: {
+          ok: false,
+          emitted,
+          logs,
+          error: { phase: errorPhase(error, cellDeadlineExceeded), message: errorMessage(error) }
+        },
+        maxOutputBytes: limits.maxOutputBytes,
+        outputLogs: logs
+      });
+    } finally {
+      cellDeadline = Number.POSITIVE_INFINITY;
+      cellAbort = undefined;
+      state.closed = true;
+      running = false;
+    }
+  };
+
+  return {
+    exec: (input, signal) => {
+      const normalized = normalizeCodeRuntimeExecuteInput(input);
+      return normalized.ok ? exec(normalized.value, signal) : Promise.resolve(normalized.result);
+    },
+    close: async () => {
+      if (closed) {
+        return;
+      }
+      closed = true;
+      disposeHandle(scopeHandle);
+      context.runtime.removeInterruptHandler();
+      context.dispose();
+    }
+  };
+}
+
+async function runSessionCell(
+  state: RuntimeState,
+  userFunctionSource: string,
+  scopeHandle: QuickJSHandle
+): Promise<unknown> {
+  const context = state.context;
+  const evalResult = await context.evalCodeAsync(userFunctionSource, "tack-cell.js", { type: "global" });
+  const functionHandle = context.unwrapResult(evalResult);
+  const invokeHandle = context.newFunction("__tackInvoke", (pathHandle, argsHandle) =>
+    callToolFromQuickJS(state, pathHandle, argsHandle)
+  );
+  const consoleHandle = createConsoleHandle(state);
+  const emitHandle = context.newFunction("emit", (valueHandle) => {
+    state.emitted.push(snapshotQuickJSValue(context, valueHandle));
+    return context.undefined;
+  });
+
+  let returnHandle: QuickJSHandle | undefined;
+  let resolvedHandle: QuickJSHandle | undefined;
+  try {
+    returnHandle = context.unwrapResult(context.callFunction(
+      functionHandle,
+      context.undefined,
+      [invokeHandle, consoleHandle, emitHandle, scopeHandle]
+    ));
+    drainPendingJobs(context);
+    const resolvedPromise = context.resolvePromise(returnHandle);
+    drainPendingJobs(context);
+    const resolvedResult = await resolvedPromise;
+    drainPendingJobs(context);
+    resolvedHandle = context.unwrapResult(resolvedResult);
+    return snapshotQuickJSValue(context, resolvedHandle);
+  } finally {
+    disposeHandle(resolvedHandle);
+    disposeHandle(returnHandle);
+    disposeHandle(emitHandle);
+    disposeHandle(consoleHandle);
+    disposeHandle(invokeHandle);
+    disposeHandle(functionHandle);
+  }
+}
+
+async function transpileSessionCell(input: {
+  readonly code: string;
+  readonly toolsPrelude: string;
+  readonly priorNames: ReadonlySet<string>;
+}): Promise<{ readonly source: string; readonly declaredNames: readonly string[] }> {
+  try {
+    validateCodeModeUserCode(input.code);
+    const rewritten = await rewriteCellScope(input.code, input.priorNames);
+    const result = await transform(renderCodeModeUserFunctionSource({
+      code: rewritten.code,
+      toolsPrelude: input.toolsPrelude,
+      fetchErrorMessage: "fetch is disabled in Tack QuickJS runtime",
+      strict: true,
+      scopeParam: true
+    }), {
+      loader: "ts",
+      format: "cjs",
+      target: "es2022",
+      sourcemap: false,
+      treeShaking: false
+    });
+    return { source: result.code, declaredNames: rewritten.declaredNames };
+  } catch (error) {
+    throw error instanceof CodeModeParseError ? error : new CodeModeParseError(errorMessage(error));
   }
 }
 

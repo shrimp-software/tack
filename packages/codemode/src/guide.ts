@@ -87,6 +87,22 @@ export function renderExecuteGuide(
     "return result;",
     "```",
     "",
+    "## Sessions",
+    "",
+    "For multi-step work, open a session with the `session` tool and pass its id to",
+    "`execute` as `session`. Top-level `const`/`let`/`function`/`class` from one cell",
+    "are in scope in the next, so you can fetch once and refine over several cells",
+    "instead of re-fetching. Close it with `session({ close })`; idle sessions expire.",
+    "Reassigning a prior cell's binding does not persist — declare a new `const` or",
+    "return the value.",
+    "",
+    "```ts",
+    "// cell 1 (session s_…)",
+    "const rules = await tools.grafana.alerting.rules.list();",
+    "// cell 2 (same session)",
+    "return rules.data.filter((r) => r.state === \"firing\").length;",
+    "```",
+    "",
     renderNamespaceInventory(manifest, policy)
   ].join("\n");
 }
