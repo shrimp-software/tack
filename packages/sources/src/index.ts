@@ -12,4 +12,4 @@ export { createRuntime, discoverManifest } from "./dispatch.js";
 export type { CreateRuntimeOptions } from "./dispatch.js";
 
 // Extension point — implement this to add a source kind.
-export type { Source, SourceRuntimeInput } from "./source.js";
+export type { Source, SourceRuntimeInput, SourceServerEntry } from "./source.js";

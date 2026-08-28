@@ -1,28 +1,21 @@
-import {
-  ownDataEntries,
-  ownDataValue as ownValue,
-  type DiscoveredServer,
-  type TackConfig,
-  type TackServerConfig
-} from "@tack/core";
+import type { DiscoveredServer } from "@tack/core";
 
 import { discoverModuleSource } from "../module/discover.js";
 import { createModuleRuntime } from "../module/runtime.js";
-import type { Source } from "../source.js";
+import type { Source, SourceServerEntry } from "../source.js";
 
-/** Local TypeScript / JavaScript files that export `defineTool()` tools. */
+/**
+ * Local TypeScript / JavaScript files that export `defineTool()` tools.
+ * Adapter only — the implementation lives in `../module/`.
+ */
 export const moduleSource: Source = {
   transports: ["module"],
-  discover: (config): Promise<DiscoveredServer[]> =>
-    Promise.all(
-      moduleRefs(config).map(([serverId, entry]) => discoverModuleSource({ serverId, entry }))
-    ),
-  createRuntime: ({ manifest }) => createModuleRuntime({ manifest })
+  discover: (entries) => Promise.all(entries.flatMap(discoverEntry)),
+  createRuntime: (input) => createModuleRuntime(input)
 };
 
-function moduleRefs(config: TackConfig): [string, string][] {
-  return ownDataEntries<TackServerConfig>(ownValue<TackConfig["servers"]>(config, "servers")).flatMap(
-    ([serverId, serverConfig]) =>
-      serverConfig.transport === "module" ? [[serverId, serverConfig.entry]] : []
-  );
+function discoverEntry([serverId, config]: SourceServerEntry): Promise<DiscoveredServer>[] {
+  return config.transport === "module"
+    ? [discoverModuleSource({ serverId, entry: config.entry })]
+    : [];
 }

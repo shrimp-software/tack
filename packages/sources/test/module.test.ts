@@ -81,8 +81,7 @@ describe("discoverModuleSource", () => {
       type: "object",
       properties: { a: { type: "number" }, b: { type: "number" } }
     });
-    expect(add?.annotations).toMatchObject({ source: "module", export: "add" });
-    expect(byName.get("shout_message")?.annotations).toMatchObject({ export: "shout" });
+    expect(byName.get("shout_message")?.name).toBe("shout_message");
   });
 
   it("rejects a module that exports no tools", async () => {

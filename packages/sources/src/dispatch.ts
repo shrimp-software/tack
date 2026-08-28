@@ -1,7 +1,5 @@
 import {
   buildManifest,
-  ownDataEntries,
-  ownDataValue as ownValue,
   TackRuntimeError,
   type TackConfig,
   type TackManifest,
@@ -13,17 +11,26 @@ import {
 
 import { mcpSource } from "./sources/mcp.js";
 import { moduleSource } from "./sources/module.js";
-import type { Source } from "./source.js";
+import type { Source, SourceServerEntry } from "./source.js";
 
 /** Every source kind the dispatcher knows. Add a new kind here — nothing else changes. */
 const SOURCES: readonly Source[] = [mcpSource, moduleSource];
+
+const SOURCE_BY_TRANSPORT: ReadonlyMap<TackManifestServer["transport"], Source> = new Map(
+  SOURCES.flatMap((source) => source.transports.map((transport) => [transport, source] as const))
+);
 
 /**
  * Discover every configured source and fold the results into one manifest with a
  * single {@link buildManifest} pass.
  */
 export async function discoverManifest(config: TackConfig): Promise<TackManifest> {
-  const discovered = await Promise.all(SOURCES.map((source) => source.discover(config)));
+  const entries: readonly SourceServerEntry[] = Object.entries(config.servers);
+  const discovered = await Promise.all(
+    SOURCES.map((source) =>
+      source.discover(entries.filter(([, server]) => source.transports.includes(server.transport)))
+    )
+  );
   return buildManifest(config, discovered.flat());
 }
 
@@ -36,47 +43,25 @@ export interface CreateRuntimeOptions {
  * Build one {@link TackRuntime} that routes each `invoke` to the source that owns
  * the tool's transport.
  */
-export async function createRuntime(options: CreateRuntimeOptions): Promise<TackRuntime> {
-  const config = ownValue<TackConfig>(options, "config") as TackConfig;
-  const manifest = ownValue<TackManifest>(options, "manifest") as TackManifest;
+export async function createRuntime({ config, manifest }: CreateRuntimeOptions): Promise<TackRuntime> {
+  const toolsBySource = groupToolsBySource(manifest);
 
-  const sourceByTransport = new Map<TackManifestServer["transport"], Source>();
-  for (const source of SOURCES) {
-    for (const transport of source.transports) {
-      sourceByTransport.set(transport, source);
-    }
-  }
-
-  const sourceByServer = new Map<string, Source>();
-  for (const [serverId, server] of ownDataEntries<TackManifestServer>(
-    ownValue<TackManifest["servers"]>(manifest, "servers")
-  )) {
-    const source = sourceByTransport.get(server.transport);
-    if (source) {
-      sourceByServer.set(serverId, source);
-    }
-  }
-
-  const toolOwners = new Map<string, Source>();
-  for (const [toolId, tool] of ownDataEntries<TackTool>(
-    ownValue<TackManifest["tools"]>(manifest, "tools")
-  )) {
-    const source = sourceByServer.get(tool.serverId);
-    if (source) {
-      toolOwners.set(toolId, source);
-    }
-  }
-
-  const runtimeBySource = new Map<Source, TackRuntime>();
-  for (const source of new Set(toolOwners.values())) {
-    runtimeBySource.set(source, await source.createRuntime({ config, manifest }));
-  }
+  const runtimeBySource = new Map(
+    await Promise.all(
+      [...toolsBySource].map(
+        async ([source, tools]) => [source, await source.createRuntime({ config, tools })] as const
+      )
+    )
+  );
 
   const routes = new Map<string, TackRuntime>();
-  for (const [toolId, source] of toolOwners) {
+  for (const [source, tools] of toolsBySource) {
     const runtime = runtimeBySource.get(source);
-    if (runtime) {
-      routes.set(toolId, runtime);
+    if (!runtime) {
+      continue;
+    }
+    for (const tool of tools) {
+      routes.set(tool.id, runtime);
     }
   }
 
@@ -97,4 +82,22 @@ export async function createRuntime(options: CreateRuntimeOptions): Promise<Tack
       await Promise.all(runtimes.map((runtime) => runtime.close()));
     }
   };
+}
+
+function groupToolsBySource(manifest: TackManifest): Map<Source, TackTool[]> {
+  const grouped = new Map<Source, TackTool[]>();
+  for (const tool of Object.values(manifest.tools)) {
+    const transport = manifest.servers[tool.serverId]?.transport;
+    const source = transport ? SOURCE_BY_TRANSPORT.get(transport) : undefined;
+    if (!source) {
+      continue;
+    }
+    const bucket = grouped.get(source);
+    if (bucket) {
+      bucket.push(tool);
+    } else {
+      grouped.set(source, [tool]);
+    }
+  }
+  return grouped;
 }

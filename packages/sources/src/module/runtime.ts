@@ -1,10 +1,7 @@
 import {
   createTackResult,
-  ownDataEntries,
-  ownDataValue as ownValue,
   TackRuntimeError,
-  type TackManifest,
-  type TackManifestServer,
+  type TackConfig,
   type TackResult,
   type TackRuntime,
   type TackTool
@@ -19,17 +16,16 @@ interface ModuleToolMeta {
 }
 
 export interface CreateModuleRuntimeOptions {
-  readonly manifest: TackManifest;
+  readonly config: TackConfig;
+  readonly tools: readonly TackTool[];
 }
 
 /**
- * A `TackRuntime` that resolves `module`-transport tools by importing their
- * source file and calling the matching `defineTool()` handler. Tools from other
- * transports are not its concern and throw `Unknown Tack tool`.
+ * A `TackRuntime` for a known-good set of `module`-transport tools. Each tool's
+ * source file is imported once and cached.
  */
 export function createModuleRuntime(options: CreateModuleRuntimeOptions): TackRuntime {
-  const manifest = ownValue<TackManifest>(options, "manifest") as TackManifest;
-  const toolsById = indexModuleTools(manifest);
+  const toolsById = indexModuleTools(options.config, options.tools);
   const definitionsByEntry = new Map<string, Promise<Map<string, TackToolDefinition>>>();
 
   const loadDefinitions = (entry: string): Promise<Map<string, TackToolDefinition>> => {
@@ -91,23 +87,15 @@ function collectDefinitions(namespace: Record<string, unknown>): Map<string, Tac
   return definitions;
 }
 
-function indexModuleTools(manifest: TackManifest): Map<string, ModuleToolMeta> {
-  const entryByServer = new Map<string, string>();
-  for (const [serverId, server] of ownDataEntries<TackManifestServer>(
-    ownValue<TackManifest["servers"]>(manifest, "servers")
-  )) {
-    if (server.transport === "module" && server.entry !== undefined) {
-      entryByServer.set(serverId, server.entry);
-    }
-  }
-
+function indexModuleTools(
+  config: TackConfig,
+  tools: readonly TackTool[]
+): Map<string, ModuleToolMeta> {
   const byId = new Map<string, ModuleToolMeta>();
-  for (const [toolId, tool] of ownDataEntries<TackTool>(
-    ownValue<TackManifest["tools"]>(manifest, "tools")
-  )) {
-    const entry = entryByServer.get(tool.serverId);
-    if (entry !== undefined) {
-      byId.set(toolId, { entry, upstreamName: tool.upstreamName });
+  for (const tool of tools) {
+    const server = config.servers[tool.serverId];
+    if (server?.transport === "module") {
+      byId.set(tool.id, { entry: server.entry, upstreamName: tool.upstreamName });
     }
   }
   return byId;

@@ -20,7 +20,7 @@ export async function discoverModuleSource(ref: ModuleSourceRef): Promise<Discov
 
   const tools: DiscoveredTool[] = [];
   const seen = new Set<string>();
-  for (const [exportName, value] of Object.entries(namespace)) {
+  for (const value of Object.values(namespace)) {
     if (!isTackTool(value)) {
       continue;
     }
@@ -36,8 +36,7 @@ export async function discoverModuleSource(ref: ModuleSourceRef): Promise<Discov
       name: value.name,
       ...(value.description ? { description: value.description } : {}),
       ...(value.inputSchema ? { inputSchema: value.inputSchema } : {}),
-      ...(value.outputSchema ? { outputSchema: value.outputSchema } : {}),
-      annotations: { source: "module", export: exportName }
+      ...(value.outputSchema ? { outputSchema: value.outputSchema } : {})
     });
   }
 

@@ -35,9 +35,6 @@ export interface PlainToolSpec<TInput, TOutput> extends BaseToolSpec {
   readonly handler: (input: TInput) => TOutput | Promise<TOutput>;
 }
 
-/** Impl-signature union only — the two public forms are the {@link defineTool} overloads. */
-type AnyToolSpec = PlainToolSpec<unknown, unknown> | ZodToolSpec<z.ZodType, unknown>;
-
 export interface TackToolDefinition<TInput = unknown, TOutput = unknown> {
   readonly name: string;
   readonly description: string | undefined;
@@ -62,7 +59,10 @@ export function defineTool<TSchema extends z.ZodType, TOutput>(
 export function defineTool<TInput, TOutput>(
   spec: PlainToolSpec<TInput, TOutput>
 ): TackToolDefinition<TInput, Awaited<TOutput>>;
-export function defineTool(spec: AnyToolSpec): TackToolDefinition {
+/** Impl-signature union only — the two public forms are the overloads above. */
+export function defineTool(
+  spec: PlainToolSpec<unknown, unknown> | ZodToolSpec<z.ZodType, unknown>
+): TackToolDefinition {
   const { input, handler } = spec;
   const parse = isZodSchema(input)
     ? (value: unknown): unknown => input.parse(value)

@@ -10,7 +10,9 @@ import {
   type TackConfig,
   type TackManifest,
   type TackResult,
-  type TackRuntime
+  type TackRuntime,
+  type TackServerConfig,
+  type TackTool
 } from "@tack/core";
 
 import {
@@ -22,48 +24,53 @@ import {
   type McpServerConfigEntry
 } from "./client.js";
 
+type McpServerEntry = readonly [string, TackServerConfig];
+
 /**
- * Discover only the MCP-backed (`stdio` / `http`) servers in a config, returning
- * raw `DiscoveredServer` entries so a caller can merge them with other source
- * kinds before a single `buildManifest` pass.
+ * Discover the given MCP server configs. Entries are expected to be pre-filtered
+ * to the `stdio` / `http` transports by the caller.
  */
-export async function discoverMcpServers(config: TackConfig): Promise<DiscoveredServer[]> {
-  const servers = ownValue<TackConfig["servers"]>(config, "servers");
-  return Promise.all(
-    ownDataEntries<TackConfig["servers"][string]>(servers)
-      .filter(([, serverConfig]) => {
-        const transport = ownValue<unknown>(serverConfig, "transport");
-        return transport === "stdio" || transport === "http";
-      })
-      .map(([serverId, serverConfig]) => discoverServer(serverId, serverConfig))
-  );
+export async function discoverMcpServers(
+  entries: readonly McpServerEntry[]
+): Promise<DiscoveredServer[]> {
+  return Promise.all(entries.map(([serverId, serverConfig]) => discoverServer(serverId, serverConfig)));
 }
 
 export async function discoverMcpManifestPromise(config: TackConfig): Promise<TackManifest> {
-  return buildManifest(config, await discoverMcpServers(config));
+  return buildManifest(config, await discoverMcpServers(mcpServerEntries(config)));
 }
 
-export interface CreateMcpRuntimeOptions {
+function mcpServerEntries(config: TackConfig): McpServerEntry[] {
+  return ownDataEntries<TackServerConfig>(ownValue<TackConfig["servers"]>(config, "servers")).filter(
+    ([, serverConfig]) => serverConfig.transport === "stdio" || serverConfig.transport === "http"
+  );
+}
+
+export interface CreateMcpToolRuntimeOptions {
   readonly config: TackConfig;
-  readonly manifest: TackManifest;
+  readonly tools: readonly TackTool[];
 }
 
-interface RuntimeToolMetadata {
+interface McpToolBinding {
   readonly serverId: string;
   readonly upstreamName: string;
 }
 
-type RuntimeToolMetadataEntry =
-  | { readonly ok: true; readonly metadata: RuntimeToolMetadata }
-  | { readonly ok: false; readonly error: TackRuntimeError };
-
-export async function createMcpRuntime(
-  options: CreateMcpRuntimeOptions
+/**
+ * A `TackRuntime` for a known-good set of MCP tools. Callers pass exactly the
+ * tools this runtime owns; server connection details come from `config`.
+ */
+export async function createMcpToolRuntime(
+  options: CreateMcpToolRuntimeOptions
 ): Promise<TackRuntime> {
   const config = ownValue<TackConfig>(options, "config") as TackConfig;
-  const manifest = ownValue<TackManifest>(options, "manifest") as TackManifest;
-  const toolMetadataById = snapshotToolMetadata(manifest);
-  const serverConfigs = snapshotServerConfigs(config, toolMetadataById);
+  const tools = ownValue<readonly TackTool[]>(options, "tools") as readonly TackTool[];
+
+  const bindingById = new Map<string, McpToolBinding>();
+  for (const tool of tools) {
+    bindingById.set(tool.id, { serverId: tool.serverId, upstreamName: tool.upstreamName });
+  }
+  const serverConfigs = snapshotServerConfigs(config, bindingById);
   const connections = new Map<string, Promise<McpConnection>>();
 
   return {
@@ -71,16 +78,16 @@ export async function createMcpRuntime(
       toolId: string,
       args: unknown
     ): Promise<TackResult<TStructured>> => {
-      const tool = toolMetadata(toolMetadataById, toolId);
-      if (!tool) {
+      const binding = bindingById.get(toolId);
+      if (!binding) {
         throw new TackRuntimeError({ message: `Unknown Tack tool: ${toolId}`, toolId });
       }
 
-      const connection = await getConnection(connections, tool.serverId, serverConfigs);
+      const connection = await getConnection(connections, binding.serverId, serverConfigs);
 
       try {
         const raw = await connection.client.callTool({
-          name: tool.upstreamName,
+          name: binding.upstreamName,
           arguments: ownDataRecord(args)
         });
         return createTackResult<TStructured>(raw);
@@ -88,7 +95,7 @@ export async function createMcpRuntime(
         throw new TackRuntimeError({
           message: `Failed to call MCP tool ${toolId}`,
           toolId,
-          serverId: tool.serverId,
+          serverId: binding.serverId,
           cause
         });
       }
@@ -97,77 +104,97 @@ export async function createMcpRuntime(
   };
 }
 
-function toolMetadata(
-  metadata: ReadonlyMap<string, RuntimeToolMetadataEntry>,
-  toolId: string
-): RuntimeToolMetadata | undefined {
-  const entry = metadata.get(toolId);
-  if (!entry) {
-    return undefined;
-  }
-
-  if (!entry.ok) {
-    throw entry.error;
-  }
-
-  return entry.metadata;
+export interface CreateMcpRuntimeOptions {
+  readonly config: TackConfig;
+  readonly manifest: TackManifest;
 }
 
-function snapshotToolMetadata(manifest: TackManifest): Map<string, RuntimeToolMetadataEntry> {
-  const metadata = new Map<string, RuntimeToolMetadataEntry>();
-  const tools = ownValue<TackManifest["tools"]>(manifest, "tools");
-  for (const [toolId, tool] of ownDataEntries<unknown>(tools)) {
-    metadata.set(toolId, normalizeToolMetadata(toolId, tool));
+/**
+ * Build a runtime for every MCP-backed tool in a manifest. Tolerates a manifest
+ * whose tool metadata is malformed: such tools reject on invoke rather than
+ * failing construction.
+ */
+export async function createMcpRuntime(options: CreateMcpRuntimeOptions): Promise<TackRuntime> {
+  const config = ownValue<TackConfig>(options, "config") as TackConfig;
+  const manifest = ownValue<TackManifest>(options, "manifest") as TackManifest;
+
+  const { valid, invalid } = partitionManifestTools(manifest);
+  const runtime = await createMcpToolRuntime({ config, tools: valid });
+  if (invalid.size === 0) {
+    return runtime;
   }
-  return metadata;
+
+  return {
+    invoke: <TStructured = unknown>(toolId: string, args: unknown): Promise<TackResult<TStructured>> => {
+      const error = invalid.get(toolId);
+      return error ? Promise.reject(error) : runtime.invoke<TStructured>(toolId, args);
+    },
+    close: (): Promise<void> => runtime.close()
+  };
 }
 
-function normalizeToolMetadata(toolId: string, tool: unknown): RuntimeToolMetadataEntry {
-  if (typeof tool !== "object" || tool === null || Array.isArray(tool)) {
-    return { ok: false, error: invalidToolMetadata(toolId) };
+function partitionManifestTools(manifest: TackManifest): {
+  readonly valid: TackTool[];
+  readonly invalid: ReadonlyMap<string, TackRuntimeError>;
+} {
+  const valid: TackTool[] = [];
+  const invalid = new Map<string, TackRuntimeError>();
+  const servers = ownValue<TackManifest["servers"]>(manifest, "servers");
+
+  for (const [toolId, rawTool] of ownDataEntries<unknown>(ownValue<TackManifest["tools"]>(manifest, "tools"))) {
+    if (typeof rawTool !== "object" || rawTool === null || Array.isArray(rawTool)) {
+      invalid.set(toolId, invalidToolMetadata(toolId));
+      continue;
+    }
+
+    const id = ownValue<unknown>(rawTool, "id");
+    const serverId = ownValue<unknown>(rawTool, "serverId");
+    const upstreamName = ownValue<unknown>(rawTool, "upstreamName");
+    if (id !== toolId || typeof serverId !== "string" || typeof upstreamName !== "string") {
+      invalid.set(toolId, invalidToolMetadata(toolId));
+      continue;
+    }
+
+    const server = ownValue<TackManifest["servers"][string]>(servers, serverId);
+    const transport = ownValue<unknown>(server, "transport");
+    if (transport === "stdio" || transport === "http") {
+      valid.push(rawTool as TackTool);
+    }
   }
 
-  const id = ownValue<unknown>(tool, "id");
-  const serverId = ownValue<unknown>(tool, "serverId");
-  const upstreamName = ownValue<unknown>(tool, "upstreamName");
-  if (id !== toolId || typeof serverId !== "string" || typeof upstreamName !== "string") {
-    return { ok: false, error: invalidToolMetadata(toolId) };
-  }
-
-  return { ok: true, metadata: { serverId, upstreamName } };
+  return { valid, invalid };
 }
 
 function snapshotServerConfigs(
   config: TackConfig,
-  metadata: ReadonlyMap<string, RuntimeToolMetadataEntry>
+  bindings: ReadonlyMap<string, McpToolBinding>
 ): Map<string, McpServerConfigEntry> {
   const serverConfigs = new Map<string, McpServerConfigEntry>();
   const servers = ownValue<TackConfig["servers"]>(config, "servers");
-  for (const entry of metadata.values()) {
-    if (!entry.ok || serverConfigs.has(entry.metadata.serverId)) {
+
+  for (const { serverId } of bindings.values()) {
+    if (serverConfigs.has(serverId)) {
       continue;
     }
 
-    const serverConfig = ownValue<TackConfig["servers"][string]>(servers, entry.metadata.serverId);
+    const serverConfig = ownValue<TackConfig["servers"][string]>(servers, serverId);
     if (!serverConfig) {
       continue;
     }
 
     try {
-      serverConfigs.set(entry.metadata.serverId, {
-        ok: true,
-        config: normalizeServerConfig(serverConfig)
-      });
+      serverConfigs.set(serverId, { ok: true, config: normalizeServerConfig(serverConfig) });
     } catch (error) {
-      serverConfigs.set(entry.metadata.serverId, {
+      serverConfigs.set(serverId, {
         ok: false,
-        error: error instanceof TackRuntimeError
-          ? error
-          : new TackRuntimeError({
-              message: `Invalid MCP server config for ${entry.metadata.serverId}`,
-              serverId: entry.metadata.serverId,
-              cause: error
-            })
+        error:
+          error instanceof TackRuntimeError
+            ? error
+            : new TackRuntimeError({
+                message: `Invalid MCP server config for ${serverId}`,
+                serverId,
+                cause: error
+              })
       });
     }
   }
@@ -183,7 +210,7 @@ function invalidToolMetadata(toolId: string): TackRuntimeError {
 
 async function discoverServer(
   serverId: string,
-  serverConfig: TackConfig["servers"][string]
+  serverConfig: TackServerConfig
 ): Promise<DiscoveredServer> {
   try {
     const connection = await openConnection(serverConfig);
