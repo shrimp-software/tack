@@ -173,4 +173,39 @@ describe("module source over MCP (e2e)", () => {
       await agent.close();
     }
   });
+
+  it("streams a live tool-call trace as progress notifications", async () => {
+    const agent = await connectAgent();
+    const messages: string[] = [];
+    try {
+      await agent.client.callTool(
+        {
+          name: "execute",
+          arguments: {
+            code: `
+              await tools.call("docs.list", {});
+              return await tools.call("docs.read", { slug: "architecture" });
+            `
+          }
+        },
+        {
+          onprogress: (progress) => {
+            if (typeof progress.message === "string") {
+              messages.push(progress.message);
+            }
+          }
+        }
+      );
+
+      expect(messages).toContain("→ docs.list");
+      expect(messages).toContain("→ docs.read");
+      expect(messages.some((line) => /^← docs\.list ok/.test(line))).toBe(true);
+      // start precedes completion for each call
+      expect(messages.indexOf("→ docs.read")).toBeLessThan(
+        messages.findIndex((line) => /^← docs\.read ok/.test(line))
+      );
+    } finally {
+      await agent.close();
+    }
+  });
 });

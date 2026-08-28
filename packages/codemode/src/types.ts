@@ -54,6 +54,19 @@ export interface BuiltinTraceEvent {
   readonly error?: string | undefined;
 }
 
+/**
+ * Emitted the moment an operation call begins, before it is awaited, so a live
+ * trace can show a call in flight. Carries operation identity and timing only —
+ * never arguments — matching the {@link OperationTraceEvent} contract.
+ */
+export interface OperationStartTraceEvent {
+  readonly type: "tool_call_start";
+  readonly timestamp: string;
+  readonly executionId?: string | undefined;
+  readonly path: string;
+  readonly toolId?: string | undefined;
+}
+
 export interface OperationTraceEvent {
   readonly type: "tool_call";
   readonly timestamp: string;
@@ -66,7 +79,10 @@ export interface OperationTraceEvent {
   readonly error?: string | undefined;
 }
 
-export type ToolTraceEvent = BuiltinTraceEvent | OperationTraceEvent;
+export type ToolTraceEvent = BuiltinTraceEvent | OperationStartTraceEvent | OperationTraceEvent;
+
+/** Sink for live trace events as an execution runs. Must be fast and must not throw. */
+export type TraceSink = (event: ToolTraceEvent) => void;
 
 export interface CodeRuntimeExecuteInput {
   readonly code: string;

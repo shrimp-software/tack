@@ -146,6 +146,13 @@ async function invokeOperation(
     return toolCallError(decision.reason ?? `Operation denied by policy: ${operation.fullPathString}`);
   }
 
+  await emitTrace(context, {
+    type: "tool_call_start",
+    timestamp: new Date().toISOString(),
+    path: operation.fullPathString,
+    toolId: operation.toolId
+  });
+
   try {
     const result = await context.runtime.invoke(operation.toolId, operationArgs(operation, args));
     const text = result.text();
@@ -227,8 +234,9 @@ async function emitTrace(
     return;
   }
 
+  const stampable = event.type === "tool_call" || event.type === "tool_call_start";
   try {
-    await context.onTraceEvent(context.executionId && event.type === "tool_call" ? {
+    await context.onTraceEvent(context.executionId && stampable ? {
       ...event,
       executionId: context.executionId
     } : event);

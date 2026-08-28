@@ -9,7 +9,13 @@ import { createTackToolInvoker } from "./invoker.js";
 import { createExecuteDescription } from "./guide.js";
 import type { OperationPolicy } from "./policy.js";
 import { renderToolsPrelude } from "./tools.js";
-import type { CodeRuntime, ExecutionResult, ExecutionTrace, ToolTraceEvent } from "./types.js";
+import type {
+  CodeRuntime,
+  ExecutionResult,
+  ExecutionTrace,
+  ToolTraceEvent,
+  TraceSink
+} from "./types.js";
 
 export interface CreateExecutionEngineOptions {
   readonly manifest: TackManifest;
@@ -17,6 +23,8 @@ export interface CreateExecutionEngineOptions {
   readonly codeRuntime: CodeRuntime;
   readonly policy?: OperationPolicy | undefined;
   readonly onAuditEvent?: Parameters<typeof createTackToolInvoker>[0]["onAuditEvent"];
+  /** Live trace sink — receives every tool/builtin event as the execution runs. */
+  readonly onTrace?: TraceSink | undefined;
 }
 
 export interface ExecutionEngine {
@@ -32,6 +40,7 @@ export function createExecutionEngine(
   const codeRuntime = normalizeCodeRuntime(readOwnData(options, "codeRuntime") as CodeRuntime);
   const policy = readOwnData(options, "policy") as OperationPolicy | undefined;
   const onAuditEvent = readOwnData(options, "onAuditEvent") as CreateExecutionEngineOptions["onAuditEvent"];
+  const onTrace = readOwnData(options, "onTrace") as TraceSink | undefined;
 
   return {
     getDescription: () => createExecuteDescription(manifest, policy),
@@ -47,6 +56,9 @@ export function createExecutionEngine(
         ...(policy ? { policy } : {}),
         onTraceEvent: (event) => {
           traceEvents.push(event);
+          if (onTrace) {
+            queueMicrotask(() => onTrace(event));
+          }
         },
         ...(onAuditEvent ? { onAuditEvent } : {})
       });

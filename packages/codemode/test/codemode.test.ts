@@ -7,6 +7,7 @@ import {
   createTackToolInvoker,
   describeTool,
   findGuide,
+  formatTraceLine,
   isOperationAllowed,
   normalizeDescribeToolInput,
   normalizeSearchInput,
@@ -290,6 +291,11 @@ describe("codemode operation helpers", () => {
     expect(calls).toEqual([{ toolId: "grafana.list_datasources", args: {} }]);
     expect(traces).toEqual([
       expect.objectContaining({ type: "builtin_call", path: "search", ok: true }),
+      expect.objectContaining({
+        type: "tool_call_start",
+        executionId: "exec-1",
+        path: "grafana.datasources.list"
+      }),
       expect.objectContaining({
         type: "tool_call",
         executionId: "exec-1",
@@ -715,6 +721,82 @@ describe("codemode operation helpers", () => {
         allowed: true,
         ok: true
       })
+    ]);
+  });
+});
+
+describe("formatTraceLine", () => {
+  it("renders start, success, denied and error events", () => {
+    expect(formatTraceLine({
+      type: "tool_call_start",
+      timestamp: "t",
+      path: "github.issues.list"
+    })).toBe("→ github.issues.list");
+
+    expect(formatTraceLine({
+      type: "tool_call",
+      timestamp: "t",
+      path: "github.issues.list",
+      allowed: true,
+      ok: true,
+      durationMs: 120
+    })).toBe("← github.issues.list ok (120ms)");
+
+    expect(formatTraceLine({
+      type: "tool_call",
+      timestamp: "t",
+      path: "github.admin.reset",
+      allowed: false,
+      ok: false,
+      error: "denied by policy"
+    })).toBe("✗ github.admin.reset denied: denied by policy");
+
+    expect(formatTraceLine({
+      type: "tool_call",
+      timestamp: "t",
+      path: "github.issues.get",
+      allowed: true,
+      ok: false,
+      error: "not found",
+      durationMs: 40
+    })).toBe("← github.issues.get error: not found (40ms)");
+
+    expect(formatTraceLine({
+      type: "builtin_call",
+      path: "search",
+      ok: true,
+      durationMs: 3
+    })).toBe("← search ok (3ms)");
+  });
+});
+
+describe("execution engine live trace", () => {
+  it("forwards every event to onTrace as the code runs", async () => {
+    const seen: string[] = [];
+    const codeRuntime: CodeRuntime = {
+      name: "test",
+      isolation: "none",
+      execute: async (input) => {
+        await input.invoker.invoke({ path: "grafana.datasources.list", args: {} });
+        return { ok: true, result: "done", emitted: [], logs: [] };
+      }
+    };
+    const engine = createExecutionEngine({
+      manifest: grafanaManifest(),
+      runtime: fakeRuntime([]),
+      codeRuntime,
+      onTrace: (event) => {
+        seen.push(formatTraceLine(event));
+      }
+    });
+
+    const result = await engine.execute("noop");
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(result.ok).toBe(true);
+    expect(seen).toEqual([
+      "→ grafana.datasources.list",
+      expect.stringMatching(/^← grafana\.datasources\.list ok/)
     ]);
   });
 });

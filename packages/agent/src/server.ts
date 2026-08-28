@@ -1,5 +1,10 @@
 import { Buffer } from "node:buffer";
-import { isSpecType, McpServer, type ContentBlock } from "@modelcontextprotocol/server";
+import {
+  isSpecType,
+  McpServer,
+  type ContentBlock,
+  type ServerContext
+} from "@modelcontextprotocol/server";
 import { z } from "zod";
 import {
   ownDataValue as readOwnData,
@@ -9,10 +14,13 @@ import {
 import {
   createExecutionEngine,
   findGuide,
+  formatTraceLine,
   renderGuideIndex,
   type CodeRuntime,
+  type CreateExecutionEngineOptions,
   type ExecutionResult,
-  type OperationPolicy
+  type OperationPolicy,
+  type TraceSink
 } from "@tack/codemode";
 import type { ToolAuditEvent } from "@tack/codemode";
 
@@ -32,13 +40,14 @@ export function createTackAgentServer(
   const codeRuntime = readOwnData(options, "codeRuntime") as CodeRuntime;
   const policy = readOwnData(options, "policy") as OperationPolicy | undefined;
   const onAuditEvent = readOwnData(options, "onAuditEvent") as CreateTackAgentServerOptions["onAuditEvent"];
-  const engine = createExecutionEngine({
+  const engineOptions: CreateExecutionEngineOptions = {
     manifest,
     runtime,
     codeRuntime,
     ...(policy ? { policy } : {}),
     ...(onAuditEvent ? { onAuditEvent } : {})
-  });
+  };
+  const engine = createExecutionEngine(engineOptions);
   const server = new McpServer(
     { name: "tack", version: "0.1.0" },
     { capabilities: { tools: {} } }
@@ -53,9 +62,13 @@ export function createTackAgentServer(
         code: z.string().trim().min(1)
       })
     },
-    async ({ code }) => {
+    async ({ code }, ctx) => {
+      const onTrace = progressTraceSink(ctx);
+      const perCall = onTrace
+        ? createExecutionEngine({ ...engineOptions, onTrace })
+        : engine;
       try {
-        return formatExecuteMcpResult(await engine.execute(code));
+        return formatExecuteMcpResult(await perCall.execute(code));
       } catch {
         return formatExecuteMcpResult({
           ok: false,
@@ -106,6 +119,32 @@ export function createTackAgentServer(
   );
 
   return server;
+}
+
+/**
+ * A trace sink that streams each event to the client as a `notifications/progress`
+ * message — but only when the request carried a `progressToken` (i.e. the client
+ * asked for progress). Returns `undefined` otherwise so the engine skips tracing.
+ */
+function progressTraceSink(ctx: ServerContext): TraceSink | undefined {
+  const meta = ctx.mcpReq._meta as { readonly progressToken?: string | number } | undefined;
+  const progressToken = meta?.progressToken;
+  if (progressToken === undefined) {
+    return undefined;
+  }
+
+  let progress = 0;
+  return (event) => {
+    progress += 1;
+    void ctx.mcpReq
+      .notify({
+        method: "notifications/progress",
+        params: { progressToken, progress, message: formatTraceLine(event) }
+      })
+      .catch(() => {
+        // A dropped progress notification must not affect the execution.
+      });
+  };
 }
 
 const MAX_PREVIEW_CHARS = 30_000;

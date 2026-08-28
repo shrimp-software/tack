@@ -5,6 +5,7 @@ import { Command } from "commander";
 import { listenTackMcpHttp, serveTackMcpStdio } from "@tack/agent";
 import {
   createExecutionEngine,
+  formatTraceLine,
   isOperationAllowed,
   type ExecutionResult,
   type OperationPolicy,
@@ -214,9 +215,10 @@ program
   .option("-c, --config <path>", "config path", DEFAULT_CONFIG_PATH)
   .option("--timeout-ms <ms>", "execution timeout override")
   .option("--json", "print the complete execution envelope")
+  .option("--quiet", "do not stream the live tool-call trace to stderr")
   .action(async (
     code: string | undefined,
-    options: { file?: string; config: string; timeoutMs?: string; json?: boolean }
+    options: { file?: string; config: string; timeoutMs?: string; json?: boolean; quiet?: boolean }
   ) =>
     run(async () => {
       const source = await resolveExecutionSource(code, options.file);
@@ -239,7 +241,8 @@ program
         runtime,
         codeRuntime: createCodeRuntime(runtimeConfig),
         ...(policy ? { policy } : {}),
-        ...(onAuditEvent ? { onAuditEvent } : {})
+        ...(onAuditEvent ? { onAuditEvent } : {}),
+        ...(options.quiet ? {} : { onTrace: (event) => console.error(formatTraceLine(event)) })
       });
 
       try {

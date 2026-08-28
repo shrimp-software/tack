@@ -7,4 +7,5 @@ export * from "./runtime-lifecycle.js";
 export * from "./runtime-support.js";
 export * from "./search.js";
 export * from "./tools.js";
+export * from "./trace-line.js";
 export * from "./types.js";
