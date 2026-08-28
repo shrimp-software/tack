@@ -14,6 +14,8 @@ import type {
   CodeRuntimeExecuteInput,
   CodeSession,
   CodeSessionOptions,
+  DerefOptions,
+  DerefResult,
   ExecutionResult,
   ExecutionTrace,
   ToolTraceEvent,
@@ -39,6 +41,8 @@ export interface ExecuteOptions {
 export interface ExecutionSession {
   readonly id: string;
   exec(code: string, options?: ExecuteOptions): Promise<ExecutionResult>;
+  /** Retrieve a value an earlier cell retained as a ref. Never rejects. */
+  deref(ref: string, options?: DerefOptions): Promise<DerefResult>;
   close(): Promise<void>;
 }
 
@@ -109,6 +113,10 @@ export function createExecutionEngine(
       return {
         id,
         exec: (code, cellOptions) => runCell((input, sig) => codeSession.exec(input, sig), code, cellOptions),
+        deref: (ref, derefOptions): Promise<DerefResult> =>
+          typeof codeSession.deref === "function"
+            ? codeSession.deref(ref, derefOptions)
+            : Promise.resolve({ ok: false, error: "This runtime does not support deref" }),
         close: () => codeSession.close()
       };
     }

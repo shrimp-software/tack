@@ -9,6 +9,7 @@ import {
   findGuide,
   formatTraceLine,
   isOperationAllowed,
+  isTackRef,
   normalizeDescribeToolInput,
   normalizeSearchInput,
   searchOperations,
@@ -722,6 +723,16 @@ describe("codemode operation helpers", () => {
         ok: true
       })
     ]);
+  });
+});
+
+describe("isTackRef", () => {
+  it("recognizes a ref marker and nothing else", () => {
+    expect(isTackRef({ __tackRef: "$1", type: "Array(9)", preview: [] })).toBe(true);
+    expect(isTackRef({ __tackRef: 1 })).toBe(false);
+    expect(isTackRef({ ref: "$1" })).toBe(false);
+    expect(isTackRef([])).toBe(false);
+    expect(isTackRef(null)).toBe(false);
   });
 });
 

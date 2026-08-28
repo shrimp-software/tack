@@ -91,13 +91,47 @@ export interface CodeRuntimeExecuteInput {
 }
 
 /**
+ * A large value a cell produced instead of returning it inline. It stays in the
+ * session under `ref` (usable as a bare identifier in later cells); `deref`
+ * retrieves it, paginated.
+ */
+export interface TackRef {
+  readonly __tackRef: string;
+  readonly type: string;
+  readonly preview: unknown;
+}
+
+export interface DerefResult {
+  readonly ok: boolean;
+  readonly value?: unknown;
+  readonly error?: string;
+  /** True when an array ref was sliced by `offset`/`limit`. */
+  readonly truncated?: boolean;
+}
+
+export interface DerefOptions {
+  readonly offset?: number | undefined;
+  readonly limit?: number | undefined;
+}
+
+/**
  * A long-lived runtime context. Successive {@link CodeSession.exec} calls share
  * one scope — top-level `const`/`let`/`function`/`class` from one cell are
  * visible to the next — until {@link CodeSession.close}.
  */
 export interface CodeSession {
   exec(input: CodeRuntimeExecuteInput, signal?: AbortSignal): Promise<ExecutionResult>;
+  /** Retrieve a value retained as a {@link TackRef} by an earlier cell. */
+  deref?(ref: string, options?: DerefOptions): Promise<DerefResult>;
   close(): Promise<void>;
+}
+
+export function isTackRef(value: unknown): value is TackRef {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    typeof (value as { __tackRef?: unknown }).__tackRef === "string"
+  );
 }
 
 export interface CodeSessionOptions {

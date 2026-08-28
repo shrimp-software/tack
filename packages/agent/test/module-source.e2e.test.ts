@@ -63,11 +63,48 @@ describe("module source over MCP (e2e)", () => {
     });
   });
 
-  it("exposes only execute and guide over MCP", async () => {
+  it("exposes the code-mode tool surface over MCP", async () => {
     const agent = await connectAgent();
     try {
       const { tools } = await agent.client.listTools();
-      expect(tools.map((tool) => tool.name).sort()).toEqual(["execute", "guide", "session"]);
+      expect(tools.map((tool) => tool.name).sort()).toEqual(["deref", "execute", "guide", "session"]);
+    } finally {
+      await agent.close();
+    }
+  });
+
+  it("retains a large session result as a ref and derefs it", async () => {
+    const agent = await connectAgent();
+    try {
+      const opened = await agent.client.callTool({ name: "session", arguments: {} });
+      const sessionId = (opened.structuredContent as { session: string }).session;
+
+      const big = await agent.client.callTool({
+        name: "execute",
+        arguments: {
+          session: sessionId,
+          code: "return Array.from({ length: 400 }, (_, i) => ({ i, blob: 'x'.repeat(50) }));"
+        }
+      });
+      expect((big.structuredContent as { result: { __tackRef?: string } }).result.__tackRef).toBe("$1");
+      expect(extractText(big.content)).toContain("retained; use `$1`");
+
+      const counted = await agent.client.callTool({
+        name: "execute",
+        arguments: { session: sessionId, code: "return $1.length;" }
+      });
+      expect(counted.structuredContent).toMatchObject({ status: "completed", result: 400 });
+
+      const page = await agent.client.callTool({
+        name: "deref",
+        arguments: { session: sessionId, ref: "$1", limit: 2 }
+      });
+      expect(page.structuredContent).toMatchObject({
+        truncated: true,
+        value: [{ i: 0 }, { i: 1 }]
+      });
+
+      await agent.client.callTool({ name: "session", arguments: { close: sessionId } });
     } finally {
       await agent.close();
     }

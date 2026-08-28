@@ -15,6 +15,7 @@ import {
   createExecutionEngine,
   findGuide,
   formatTraceLine,
+  isTackRef,
   renderGuideIndex,
   type CodeRuntime,
   type CreateExecutionEngineOptions,
@@ -119,6 +120,37 @@ export function createTackAgentServer(
       return {
         content: [{ type: "text", text: id }],
         structuredContent: { session: id }
+      };
+    }
+  );
+
+  server.registerTool(
+    "deref",
+    {
+      title: "Read a retained code-mode ref",
+      description: "Retrieve a value an `execute` cell kept as a ref (e.g. `$1`). Arrays and strings page by `offset`/`limit`.",
+      inputSchema: z.object({
+        session: z.string(),
+        ref: z.string().regex(/^\$(\d+|_)$/, 'ref must be "$1", "$2", … or "$_"'),
+        offset: z.number().int().min(0).optional(),
+        limit: z.number().int().min(1).max(1000).optional()
+      })
+    },
+    async ({ session, ref, offset, limit }) => {
+      const entry = sessions.get(session);
+      if (!entry) {
+        return { content: [{ type: "text", text: `Unknown session "${session}"` }], isError: true };
+      }
+      const result = await entry.deref(ref, {
+        ...(offset === undefined ? {} : { offset }),
+        ...(limit === undefined ? {} : { limit })
+      });
+      if (!result.ok) {
+        return { content: [{ type: "text", text: result.error ?? "deref failed" }], isError: true };
+      }
+      return {
+        content: [{ type: "text", text: valueText(result.value) }],
+        structuredContent: { value: result.value, truncated: result.truncated ?? false }
       };
     }
   );
@@ -339,6 +371,12 @@ function executionText(result: ExecutionResult, emittedCount: number): string | 
   const parts: string[] = [];
   if (result.error) {
     parts.push(truncatePreview(`Error: ${result.error.phase}: ${result.error.message}`, MAX_PREVIEW_CHARS, previewSuffix));
+  } else if (emittedCount === 0 && isTackRef(result.result)) {
+    const ref = result.result;
+    parts.push(
+      `\`${ref.__tackRef}\` — ${ref.type}\n${truncatePreview(valueText(ref.preview), MAX_PREVIEW_CHARS, previewSuffix)}\n` +
+        `(retained; use \`${ref.__tackRef}\` in the next cell, or deref({ session, ref: "${ref.__tackRef}" }))`
+    );
   } else if (emittedCount === 0 && "result" in result) {
     parts.push(truncatePreview(valueText(result.result), MAX_PREVIEW_CHARS, previewSuffix));
   } else if (emittedCount === 0) {

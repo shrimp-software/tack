@@ -4,6 +4,7 @@ import {
   type CodeRuntime,
   type CodeSession,
   type CodeSessionOptions,
+  type DerefResult,
   type ExecuteErrorPhase,
   type ExecutionResult,
   type NormalizedCodeRuntimeExecuteInput,
@@ -34,6 +35,8 @@ export interface QuickJSRuntimeOptions {
   readonly maxToolCalls?: number;
   readonly maxToolRequestBytes?: number;
   readonly maxToolResponseBytes?: number;
+  /** In a session, a returned/emitted value larger than this is retained as a ref. */
+  readonly maxInlineResultBytes?: number;
 }
 
 const DEFAULT_TIMEOUT_MS = 30_000;
@@ -43,6 +46,9 @@ const DEFAULT_MAX_OUTPUT_BYTES = 1_000_000;
 const DEFAULT_MAX_TOOL_CALLS = 100;
 const DEFAULT_MAX_TOOL_REQUEST_BYTES = 1_000_000;
 const DEFAULT_MAX_TOOL_RESPONSE_BYTES = 1_000_000;
+const DEFAULT_MAX_INLINE_RESULT_BYTES = 4_096;
+const REF_PREVIEW_LIMIT = 10;
+const DEREF_DEFAULT_LIMIT = 100;
 
 export function createQuickJSRuntime(options: QuickJSRuntimeOptions = {}): CodeRuntime {
   const limits = normalizeRuntimeOptions(options);
@@ -83,6 +89,7 @@ interface QuickJSLimits {
   readonly maxToolCalls: number;
   readonly maxToolRequestBytes: number;
   readonly maxToolResponseBytes: number;
+  readonly maxInlineResultBytes: number;
 }
 
 interface RuntimeState {
@@ -105,7 +112,8 @@ function normalizeRuntimeOptions(options: QuickJSRuntimeOptions): QuickJSLimits 
     maxOutputBytes: readOwnNumber(options, "maxOutputBytes") ?? DEFAULT_MAX_OUTPUT_BYTES,
     maxToolCalls: readOwnNumber(options, "maxToolCalls") ?? DEFAULT_MAX_TOOL_CALLS,
     maxToolRequestBytes: readOwnNumber(options, "maxToolRequestBytes") ?? DEFAULT_MAX_TOOL_REQUEST_BYTES,
-    maxToolResponseBytes: readOwnNumber(options, "maxToolResponseBytes") ?? DEFAULT_MAX_TOOL_RESPONSE_BYTES
+    maxToolResponseBytes: readOwnNumber(options, "maxToolResponseBytes") ?? DEFAULT_MAX_TOOL_RESPONSE_BYTES,
+    maxInlineResultBytes: readOwnNumber(options, "maxInlineResultBytes") ?? DEFAULT_MAX_INLINE_RESULT_BYTES
   };
 }
 
@@ -239,6 +247,163 @@ async function runUserFunction(state: RuntimeState, userFunctionSource: string):
 }
 
 // ---------------------------------------------------------------------------
+// Refs: keep large returned/emitted values inside the isolate.
+// ---------------------------------------------------------------------------
+
+const REF_HELPERS_SOURCE = `
+globalThis.__tackRefHelpers = {
+  len(v) { try { const s = JSON.stringify(v); return s == null ? -1 : s.length; } catch { return -1; } },
+  describe(v) {
+    if (v === null) return "null";
+    if (Array.isArray(v)) {
+      const first = v.length ? v[0] : undefined;
+      const keys = first && typeof first === "object" ? Object.keys(first).slice(0, 6).join(", ") : "";
+      return "Array(" + v.length + ")" + (keys ? " <{ " + keys + " }>" : "");
+    }
+    const t = typeof v;
+    if (t === "string") return "string (" + v.length + " chars)";
+    if (t === "object") return "{ " + Object.keys(v).slice(0, 8).join(", ") + " }";
+    return t;
+  },
+  preview(v, limit) {
+    if (Array.isArray(v)) return v.slice(0, limit);
+    if (v && typeof v === "object") {
+      const out = {};
+      for (const k of Object.keys(v).slice(0, limit)) out[k] = v[k];
+      return out;
+    }
+    if (typeof v === "string") return v.slice(0, limit * 40);
+    return v;
+  },
+  slice(v, offset, limit) {
+    if (Array.isArray(v) || typeof v === "string") {
+      return { value: v.slice(offset, offset + limit), truncated: offset > 0 || v.length > offset + limit };
+    }
+    return { value: v, truncated: false };
+  }
+};
+`;
+
+interface RefSink {
+  readonly scopeHandle: QuickJSHandle;
+  readonly newRefNames: string[];
+}
+
+interface RefBridge {
+  materialize(valueHandle: QuickJSHandle, sink: RefSink): unknown;
+  deref(scopeHandle: QuickJSHandle, ref: string, options: { readonly offset: number; readonly limit: number }): DerefResult;
+  dispose(): void;
+}
+
+async function createRefBridge(
+  context: QuickJSAsyncContext,
+  maxInlineResultBytes: number,
+  maxOutputBytes: number
+): Promise<RefBridge> {
+  disposeHandle(context.unwrapResult(
+    await context.evalCodeAsync(REF_HELPERS_SOURCE, "tack-ref-helpers.js", { type: "global" })
+  ));
+  const helpers = context.getProp(context.global, "__tackRefHelpers");
+  const lenFn = context.getProp(helpers, "len");
+  const describeFn = context.getProp(helpers, "describe");
+  const previewFn = context.getProp(helpers, "preview");
+  const sliceFn = context.getProp(helpers, "slice");
+  let count = 0;
+
+  const callNumber = (fn: QuickJSHandle, arg: QuickJSHandle): number => {
+    const result = context.unwrapResult(context.callFunction(fn, helpers, [arg]));
+    try {
+      return context.getNumber(result);
+    } finally {
+      disposeHandle(result);
+    }
+  };
+  const callString = (fn: QuickJSHandle, arg: QuickJSHandle): string => {
+    const result = context.unwrapResult(context.callFunction(fn, helpers, [arg]));
+    try {
+      return context.getString(result);
+    } finally {
+      disposeHandle(result);
+    }
+  };
+  const callValue = (fn: QuickJSHandle, args: QuickJSHandle[]): unknown => {
+    const result = context.unwrapResult(context.callFunction(fn, helpers, args));
+    try {
+      return snapshotQuickJSValue(context, result);
+    } finally {
+      disposeHandle(result);
+    }
+  };
+
+  return {
+    materialize: (valueHandle, sink) => {
+      if (context.typeof(valueHandle) === "undefined") {
+        return undefined;
+      }
+      const len = callNumber(lenFn, valueHandle);
+      if (len >= 0 && len <= maxInlineResultBytes) {
+        return snapshotQuickJSValue(context, valueHandle);
+      }
+
+      count += 1;
+      const name = `$${count}`;
+      context.setProp(sink.scopeHandle, name, valueHandle);
+      context.setProp(sink.scopeHandle, "$_", valueHandle);
+      sink.newRefNames.push(name, "$_");
+
+      const limitHandle = context.newNumber(REF_PREVIEW_LIMIT);
+      let preview: unknown;
+      try {
+        preview = callValue(previewFn, [valueHandle, limitHandle]);
+      } finally {
+        disposeHandle(limitHandle);
+      }
+      return { __tackRef: name, type: callString(describeFn, valueHandle), preview };
+    },
+    deref: (scopeHandle, ref, options) => {
+      const valueHandle = context.getProp(scopeHandle, ref);
+      try {
+        if (context.typeof(valueHandle) === "undefined") {
+          return { ok: false, error: `No such ref "${ref}"` };
+        }
+        const offsetHandle = context.newNumber(options.offset);
+        const limitHandle = context.newNumber(options.limit);
+        let sliced: { readonly value: unknown; readonly truncated: boolean };
+        try {
+          sliced = callValue(sliceFn, [valueHandle, offsetHandle, limitHandle]) as {
+            readonly value: unknown;
+            readonly truncated: boolean;
+          };
+        } finally {
+          disposeHandle(offsetHandle);
+          disposeHandle(limitHandle);
+        }
+        const text = safeStringify(sliced.value);
+        if (text !== undefined && Buffer.byteLength(text) > maxOutputBytes) {
+          return { ok: false, error: "Value is too large; pass a smaller limit" };
+        }
+        return { ok: true, value: sliced.value, truncated: sliced.truncated };
+      } finally {
+        disposeHandle(valueHandle);
+      }
+    },
+    dispose: () => {
+      for (const handle of [sliceFn, previewFn, describeFn, lenFn, helpers]) {
+        disposeHandle(handle);
+      }
+    }
+  };
+}
+
+function safeStringify(value: unknown): string | undefined {
+  try {
+    return JSON.stringify(value) ?? undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Sessions: one persistent context across many `exec` cells.
 // ---------------------------------------------------------------------------
 
@@ -255,6 +420,7 @@ async function createQuickJSSession(
   context.runtime.setMaxStackSize(limits.maxStackBytes);
 
   const scopeHandle = context.newObject();
+  const refs = await createRefBridge(context, limits.maxInlineResultBytes, limits.maxOutputBytes);
   const declaredNames = new Set<string>();
   const startedAtMs = Date.now();
 
@@ -302,6 +468,7 @@ async function createQuickJSSession(
     cellDeadlineExceeded = false;
 
     let cellNames: readonly string[] = [];
+    const newRefNames: string[] = [];
     try {
       throwIfAborted(signal);
       const transpiled = await transpileSessionCell({
@@ -313,13 +480,13 @@ async function createQuickJSSession(
 
       cellDeadline = Date.now() + perCellTimeoutMs;
       const result = await withTimeout({
-        promise: runSessionCell(state, transpiled.source, scopeHandle),
+        promise: runSessionCell(state, transpiled.source, { scopeHandle, refs, newRefNames }),
         timeoutMs: perCellTimeoutMs,
         signal,
         message: `QuickJS session cell timed out after ${perCellTimeoutMs}ms`
       });
 
-      for (const name of cellNames) {
+      for (const name of [...cellNames, ...newRefNames]) {
         declaredNames.add(name);
       }
 
@@ -355,11 +522,21 @@ async function createQuickJSSession(
       const normalized = normalizeCodeRuntimeExecuteInput(input);
       return normalized.ok ? exec(normalized.value, signal) : Promise.resolve(normalized.result);
     },
+    deref: async (ref, derefOptions) => {
+      if (closed) {
+        return { ok: false, error: "Session is closed" };
+      }
+      return refs.deref(scopeHandle, ref, {
+        offset: Math.max(0, Math.trunc(derefOptions?.offset ?? 0)),
+        limit: Math.max(1, Math.trunc(derefOptions?.limit ?? DEREF_DEFAULT_LIMIT))
+      });
+    },
     close: async () => {
       if (closed) {
         return;
       }
       closed = true;
+      refs.dispose();
       disposeHandle(scopeHandle);
       context.runtime.removeInterruptHandler();
       context.dispose();
@@ -367,12 +544,19 @@ async function createQuickJSSession(
   };
 }
 
+interface SessionCellContext {
+  readonly scopeHandle: QuickJSHandle;
+  readonly refs: RefBridge;
+  readonly newRefNames: string[];
+}
+
 async function runSessionCell(
   state: RuntimeState,
   userFunctionSource: string,
-  scopeHandle: QuickJSHandle
+  cell: SessionCellContext
 ): Promise<unknown> {
   const context = state.context;
+  const sink: RefSink = { scopeHandle: cell.scopeHandle, newRefNames: cell.newRefNames };
   const evalResult = await context.evalCodeAsync(userFunctionSource, "tack-cell.js", { type: "global" });
   const functionHandle = context.unwrapResult(evalResult);
   const invokeHandle = context.newFunction("__tackInvoke", (pathHandle, argsHandle) =>
@@ -380,7 +564,7 @@ async function runSessionCell(
   );
   const consoleHandle = createConsoleHandle(state);
   const emitHandle = context.newFunction("emit", (valueHandle) => {
-    state.emitted.push(snapshotQuickJSValue(context, valueHandle));
+    state.emitted.push(cell.refs.materialize(valueHandle, sink));
     return context.undefined;
   });
 
@@ -390,7 +574,7 @@ async function runSessionCell(
     returnHandle = context.unwrapResult(context.callFunction(
       functionHandle,
       context.undefined,
-      [invokeHandle, consoleHandle, emitHandle, scopeHandle]
+      [invokeHandle, consoleHandle, emitHandle, cell.scopeHandle]
     ));
     drainPendingJobs(context);
     const resolvedPromise = context.resolvePromise(returnHandle);
@@ -398,7 +582,7 @@ async function runSessionCell(
     const resolvedResult = await resolvedPromise;
     drainPendingJobs(context);
     resolvedHandle = context.unwrapResult(resolvedResult);
-    return snapshotQuickJSValue(context, resolvedHandle);
+    return cell.refs.materialize(resolvedHandle, sink);
   } finally {
     disposeHandle(resolvedHandle);
     disposeHandle(returnHandle);

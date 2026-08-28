@@ -554,7 +554,7 @@ describe("MCP server", () => {
 
     try {
       const listed = await client.listTools();
-      expect(listed.tools.map((tool) => tool.name).sort()).toEqual(["execute", "guide", "session"]);
+      expect(listed.tools.map((tool) => tool.name).sort()).toEqual(["deref", "execute", "guide", "session"]);
     } finally {
       await Promise.allSettled([client.close(), server.close()]);
     }
@@ -577,7 +577,7 @@ describe("MCP server", () => {
 
     try {
       const listed = await client.listTools();
-      expect(listed.tools.map((tool) => tool.name).sort()).toEqual(["execute", "guide", "session"]);
+      expect(listed.tools.map((tool) => tool.name).sort()).toEqual(["deref", "execute", "guide", "session"]);
       expect(listed.tools.find((tool) => tool.name === "execute")?.description)
         .toContain("## Available namespaces");
       expect(listed.tools.find((tool) => tool.name === "execute")?.description)

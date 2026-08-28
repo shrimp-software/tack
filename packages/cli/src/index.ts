@@ -510,7 +510,8 @@ function createCodeRuntime(config: TackConfig) {
     ...(config.runtime?.maxOutputBytes ? { maxOutputBytes: config.runtime.maxOutputBytes } : {}),
     ...(config.runtime?.maxToolCalls ? { maxToolCalls: config.runtime.maxToolCalls } : {}),
     ...(config.runtime?.maxToolRequestBytes ? { maxToolRequestBytes: config.runtime.maxToolRequestBytes } : {}),
-    ...(config.runtime?.maxToolResponseBytes ? { maxToolResponseBytes: config.runtime.maxToolResponseBytes } : {})
+    ...(config.runtime?.maxToolResponseBytes ? { maxToolResponseBytes: config.runtime.maxToolResponseBytes } : {}),
+    ...(config.runtime?.maxInlineResultBytes ? { maxInlineResultBytes: config.runtime.maxInlineResultBytes } : {})
   };
 
   return config.runtime?.type === "workerd"

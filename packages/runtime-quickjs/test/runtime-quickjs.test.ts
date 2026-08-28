@@ -345,6 +345,50 @@ describe("quickjs session", () => {
     expect(afterClose).toMatchObject({ ok: false, error: { message: "Session is closed" } });
   });
 
+  it("retains a large return value as a ref and dereferences it", async () => {
+    const runtime = createQuickJSRuntime({ timeoutMs: 5_000, maxInlineResultBytes: 200 });
+    const session = await runtime.createSession!();
+    try {
+      const big = await session.exec({
+        code: "return Array.from({ length: 500 }, (_, i) => ({ id: i, name: 'row-' + i }));",
+        invoker: fakeInvoker([]),
+        toolsPrelude: renderToolsPrelude()
+      });
+      expect(big.ok).toBe(true);
+      expect(big.result).toMatchObject({ __tackRef: "$1", type: expect.stringContaining("Array(500)") });
+      expect(Array.isArray((big.result as { preview: unknown }).preview)).toBe(true);
+
+      // the ref is usable as a bare identifier in the next cell
+      const usesRef = await session.exec({
+        code: "return $1.length + ($_ === $1 ? 1 : 0);",
+        invoker: fakeInvoker([]),
+        toolsPrelude: renderToolsPrelude()
+      });
+      expect(usesRef).toMatchObject({ ok: true, result: 501 });
+
+      // deref pages the retained value
+      const page = await session.deref!("$1", { offset: 0, limit: 3 });
+      expect(page).toMatchObject({
+        ok: true,
+        truncated: true,
+        value: [{ id: 0, name: "row-0" }, { id: 1 }, { id: 2 }]
+      });
+
+      const missing = await session.deref!("$nope");
+      expect(missing.ok).toBe(false);
+
+      // a small value still returns inline
+      const small = await session.exec({
+        code: "return { hi: true };",
+        invoker: fakeInvoker([]),
+        toolsPrelude: renderToolsPrelude()
+      });
+      expect(small).toMatchObject({ ok: true, result: { hi: true } });
+    } finally {
+      await session.close();
+    }
+  });
+
   it("surfaces a failing cell without poisoning the session scope", async () => {
     const runtime = createQuickJSRuntime({ timeoutMs: 5_000 });
     const session = await runtime.createSession!();

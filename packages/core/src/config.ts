@@ -50,7 +50,8 @@ const TackConfigSchema = z.object({
       maxOutputBytes: z.number().int().positive().optional(),
       maxToolCalls: z.number().int().positive().optional(),
       maxToolRequestBytes: z.number().int().positive().optional(),
-      maxToolResponseBytes: z.number().int().positive().optional()
+      maxToolResponseBytes: z.number().int().positive().optional(),
+      maxInlineResultBytes: z.number().int().positive().optional()
     })
     .optional(),
   security: z

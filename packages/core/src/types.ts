@@ -34,6 +34,7 @@ export interface TackConfig {
     readonly maxToolCalls?: number | undefined;
     readonly maxToolRequestBytes?: number | undefined;
     readonly maxToolResponseBytes?: number | undefined;
+    readonly maxInlineResultBytes?: number | undefined;
   } | undefined;
   readonly security?: {
     readonly allowedOperations?: readonly string[] | undefined;
