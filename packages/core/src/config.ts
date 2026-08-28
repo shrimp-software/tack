@@ -1,9 +1,9 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
-import { dirname } from "node:path";
+import { dirname, isAbsolute, resolve } from "node:path";
 import { z } from "zod";
 
 import { TackConfigError, TackIoError } from "./errors.js";
-import type { TackConfig } from "./types.js";
+import type { ModuleServerConfig, TackConfig, TackServerConfig } from "./types.js";
 
 const StdioServerConfigSchema = z.object({
   transport: z.literal("stdio"),
@@ -20,9 +20,15 @@ const HttpServerConfigSchema = z.object({
   headers: z.record(z.string(), z.string()).optional()
 });
 
+const ModuleServerConfigSchema = z.object({
+  transport: z.literal("module"),
+  entry: z.string().min(1)
+});
+
 const ServerConfigSchema = z.discriminatedUnion("transport", [
   StdioServerConfigSchema,
-  HttpServerConfigSchema
+  HttpServerConfigSchema,
+  ModuleServerConfigSchema
 ]);
 
 const RateLimitConfigSchema = z.object({
@@ -146,10 +152,38 @@ async function loadJson(path: string): Promise<unknown> {
   }
 }
 
-function loadConfig(path: string): Promise<TackConfig> {
-  return loadParsedJson(path, parseConfig, (cause) =>
+async function loadConfig(path: string): Promise<TackConfig> {
+  const config = await loadParsedJson(path, parseConfig, (cause) =>
     new TackConfigError({ message: `Invalid Tack config at ${path}`, cause })
   );
+  return resolveModuleEntries(config, dirname(path));
+}
+
+/**
+ * Anchor relative module source `entry` paths to the config file's directory
+ * rather than the current working directory. Returns the input unchanged when
+ * there is nothing to rewrite.
+ */
+function resolveModuleEntries(config: TackConfig, baseDir: string): TackConfig {
+  const entries = Object.entries(config.servers);
+  if (!entries.some(([, server]) => needsAnchoring(server))) {
+    return config;
+  }
+
+  const servers = Object.create(null) as Record<string, TackServerConfig>;
+  for (const [id, server] of entries) {
+    servers[id] = needsAnchoring(server)
+      ? { ...server, entry: resolve(baseDir, server.entry) }
+      : server;
+  }
+
+  return { ...config, servers };
+}
+
+/** A module source whose `entry` is relative and therefore needs anchoring to
+ *  the config file's directory. */
+function needsAnchoring(server: TackServerConfig): server is ModuleServerConfig {
+  return server.transport === "module" && !isAbsolute(server.entry);
 }
 
 async function writeJson(path: string, value: unknown): Promise<void> {

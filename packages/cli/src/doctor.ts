@@ -1,6 +1,6 @@
 import { stat } from "node:fs/promises";
 import { DEFAULT_CONFIG_PATH, loadConfigPromise, type TackConfig } from "@tack/core";
-import { discoverMcpManifestPromise } from "@tack/mcp";
+import { discoverManifest } from "@tack/sources";
 import { formatCliError } from "./cli-output.js";
 
 export interface DoctorOptions {
@@ -35,7 +35,7 @@ export async function runDoctor(options: DoctorOptions): Promise<DoctorReport> {
   let config: TackConfig;
   try {
     config = await loadConfigPromise(options.config);
-    lines.push(checkLine("ok", `Parsed ${Object.keys(config.servers).length} MCP server config(s)`));
+    lines.push(checkLine("ok", `Parsed ${Object.keys(config.servers).length} source config(s)`));
   } catch (error) {
     return {
       ok: false,
@@ -50,16 +50,16 @@ export async function runDoctor(options: DoctorOptions): Promise<DoctorReport> {
   if (!options.discovery) {
     return {
       ok,
-      lines: [...lines, checkLine("warn", "Skipped live MCP discovery")]
+      lines: [...lines, checkLine("warn", "Skipped live source discovery")]
     };
   }
 
   try {
-    const manifest = await discoverMcpManifestPromise(config);
+    const manifest = await discoverManifest(config);
     lines.push(checkLine("ok", `Discovered ${Object.keys(manifest.tools).length} tool(s)`));
   } catch (error) {
     ok = false;
-    lines.push(checkLine("fail", "Live MCP discovery failed"));
+    lines.push(checkLine("fail", "Source discovery failed"));
     lines.push(formatCliError(error));
   }
 

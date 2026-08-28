@@ -1,4 +1,8 @@
-import { describe, expect, it } from "vitest";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { isAbsolute, join } from "node:path";
+
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import {
   buildManifest,
@@ -7,6 +11,7 @@ import {
   dedupeName,
   formatTackError,
   hasRequiredInput,
+  loadConfigPromise,
   parseConfig,
   listOperations,
   operationArgs,
@@ -1007,6 +1012,57 @@ describe("config", () => {
         tools: {}
       }
     })).toThrow("config.shape was removed; Tack now infers operation paths automatically.");
+  });
+});
+
+describe("config path resolution", () => {
+  let dir: string;
+
+  beforeEach(async () => {
+    dir = await mkdtemp(join(tmpdir(), "tack-config-paths-"));
+  });
+
+  afterEach(async () => {
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  async function loadConfigWith(servers: Record<string, unknown>): Promise<TackConfig> {
+    const path = join(dir, "tack.config.json");
+    await writeFile(path, JSON.stringify({ servers }), "utf8");
+    return loadConfigPromise(path);
+  }
+
+  it("anchors a relative module entry to the config file's directory", async () => {
+    const config = await loadConfigWith({
+      local: { transport: "module", entry: "./tools/local.ts" }
+    });
+
+    const entry = config.servers["local"];
+    expect(entry?.transport).toBe("module");
+    expect(entry && "entry" in entry ? entry.entry : "").toBe(join(dir, "tools", "local.ts"));
+  });
+
+  it("leaves an absolute module entry untouched", async () => {
+    const absolute = join(dir, "elsewhere", "local.ts");
+    const config = await loadConfigWith({
+      local: { transport: "module", entry: absolute }
+    });
+
+    const entry = config.servers["local"];
+    expect(entry && "entry" in entry ? entry.entry : "").toBe(absolute);
+    expect(isAbsolute(absolute)).toBe(true);
+  });
+
+  it("leaves configs with no module source structurally unchanged", async () => {
+    const config = await loadConfigWith({
+      grafana: { transport: "stdio", command: "grafana-mcp" },
+      remote: { transport: "http", url: "https://grafana.example.com/mcp" }
+    });
+
+    expect(config.servers).toEqual({
+      grafana: { transport: "stdio", command: "grafana-mcp" },
+      remote: { transport: "http", url: "https://grafana.example.com/mcp" }
+    });
   });
 });
 

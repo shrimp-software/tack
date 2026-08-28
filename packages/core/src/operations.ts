@@ -5,7 +5,7 @@ import {
   objectRecord as schemaRecord,
   schemaProperties
 } from "./schema-data.js";
-import type { JsonSchema, TackManifest, TackOperation, TackTool } from "./types.js";
+import type { JsonSchema, TackManifest, TackOperation } from "./types.js";
 
 interface OperationVariant {
   readonly sdkName: string;

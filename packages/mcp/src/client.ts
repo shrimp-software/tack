@@ -4,11 +4,15 @@ import {
   TackRuntimeError,
   ownDataEntries,
   ownDataValue as ownValue,
-  type TackConfig,
-  type TackServerConfig
+  type HttpServerConfig,
+  type StdioServerConfig,
+  type TackConfig
 } from "@tack/core";
 
 import { StreamableHttpMcpClient } from "./http-client.js";
+
+/** The MCP-backed subset of server configs this module can connect to. */
+type McpServerConfig = StdioServerConfig | HttpServerConfig;
 
 export interface McpClient {
   listTools(): Promise<{ readonly tools: readonly unknown[] }>;
@@ -24,7 +28,7 @@ export interface McpConnection {
 }
 
 export type McpServerConfigEntry =
-  | { readonly ok: true; readonly config: TackServerConfig }
+  | { readonly ok: true; readonly config: McpServerConfig }
   | { readonly ok: false; readonly error: TackRuntimeError };
 
 export async function getConnection(
@@ -85,7 +89,7 @@ export async function openConnection(serverConfig: TackConfig["servers"][string]
   return openStdioConnection(normalized);
 }
 
-export function normalizeServerConfig(serverConfig: TackConfig["servers"][string]): TackServerConfig {
+export function normalizeServerConfig(serverConfig: TackConfig["servers"][string]): McpServerConfig {
   const transport = ownValue<unknown>(serverConfig, "transport");
   if (transport === "http") {
     const url = ownValue<unknown>(serverConfig, "url");
@@ -121,11 +125,17 @@ export function normalizeServerConfig(serverConfig: TackConfig["servers"][string
     };
   }
 
+  if (transport === "module") {
+    throw new TackRuntimeError({
+      message: "Module sources have no MCP connection; they run through the module runtime"
+    });
+  }
+
   throw new TackRuntimeError({ message: "Invalid MCP server config: missing transport" });
 }
 
 async function openStdioConnection(
-  serverConfig: Extract<TackServerConfig, { readonly transport: "stdio" }>
+  serverConfig: StdioServerConfig
 ): Promise<McpConnection> {
   const client = new Client({ name: "tack", version: "0.1.0" });
   const transport = new StdioClientTransport({
@@ -152,7 +162,7 @@ async function openStdioConnection(
 }
 
 function scopedProcessEnv(
-  serverConfig: Extract<TackServerConfig, { readonly transport: "stdio" }>
+  serverConfig: StdioServerConfig
 ): Record<string, string> {
   return {
     ...(serverConfig.inheritEnv === true ? processEnv() : minimalProcessEnv()),

@@ -1,6 +1,6 @@
 # Tack
 
-Tack turns live MCP servers into agent-friendly TypeScript tools. It discovers MCP tools, infers stable operation paths, generates a typed SDK, and exposes `execute` and `guide` over MCP.
+Tack turns live sources — MCP servers and local TypeScript modules — into agent-friendly TypeScript tools. It discovers tools, infers stable operation paths, generates a typed SDK, and exposes `execute` and `guide` over MCP.
 
 The SDK target is TypeScript only. Code mode runs on QuickJS by default, with workerd available as an optional runtime.
 
@@ -10,6 +10,7 @@ The SDK target is TypeScript only. Code mode runs on QuickJS by default, with wo
 | --- | --- |
 | `@tack/core` | Config, manifests, operation planning, shared safe-data helpers |
 | `@tack/mcp` | MCP discovery and invocation |
+| `@tack/sources` | Source dispatch (MCP + module sources), `defineTool` authoring API |
 | `@tack/generator` | TypeScript SDK and docs generation |
 | `@tack/codemode` | Search, describe, execution engine, runtime helpers |
 | `@tack/runtime-quickjs` | Default isolated runtime |
@@ -42,6 +43,7 @@ bun run --cwd packages/cli dev -- generate
 bun run --cwd packages/cli dev -- docs
 bun run --cwd packages/cli dev -- build
 bun run --cwd packages/cli dev -- call <operation.path> --json '{}'
+bun run --cwd packages/cli dev -- execute --file probe.ts
 bun run --cwd packages/cli dev -- mcp
 bun run --cwd packages/cli dev -- host --host 127.0.0.1 --port 8788
 bun run --cwd packages/cli dev -- serve
@@ -80,6 +82,45 @@ Minimal config:
 
 Use `"runtime": { "type": "workerd" }` to switch code-mode execution to workerd. Operation paths are inferred from MCP tool names and discriminator schemas.
 The `service` block is only needed for bearer-protected `host` or for `serve`.
+
+## Sources
+
+Every `servers` entry is a **source**. Two transports are supported:
+
+- `stdio` / `http` — an MCP server, discovered live.
+- `module` — a local TypeScript file that exports tools. `entry` is resolved relative to the config file.
+
+```json
+{
+  "servers": {
+    "grafana": { "transport": "stdio", "command": "uvx", "args": ["mcp-grafana"] },
+    "local": { "transport": "module", "entry": "./tack/local.ts" }
+  }
+}
+```
+
+A module source exports one `defineTool()` per tool. Each has a `name` (its stable identity); a Zod `input` schema is validated on every call and converted to JSON Schema for discovery (a plain JSON Schema object is also accepted and used as-is).
+
+```ts
+import { z } from "zod";
+import { defineTool } from "@tack/sources";
+
+export const searchDocs = defineTool({
+  name: "search_docs",
+  description: "Full-text search over internal docs",
+  input: z.object({ query: z.string(), limit: z.number().default(10) }),
+  async handler({ query, limit }) {
+    const res = await fetch(`https://docs.internal/api?q=${query}&n=${limit}`);
+    return res.json();
+  }
+});
+```
+
+Module sources run in the host process with full authority — unlike code mode, they are not sandboxed. They are trusted code, on the same footing as the config itself; agent calls into them still pass through `security.allowedOperations` and the audit log. A handler that throws (or fails input validation) surfaces as an error result, not a crash. Wrapping a command-line tool is just a handler that spawns it.
+
+Running `.ts` entries needs a TypeScript-aware runtime: `tack` under `tsx`/`bun`, or Node 22.18+ with type stripping. `.js` / `.mjs` entries work everywhere.
+
+A worked example lives at `packages/sources/examples/markdown-source.ts` (serve a folder of markdown files as `list` / `read` tools); `packages/agent/test/module-source.e2e.test.ts` registers it and drives it end-to-end over MCP.
 
 ## Notes
 

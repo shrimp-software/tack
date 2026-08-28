@@ -9,6 +9,7 @@ import { fakeRuntime, grafanaManifest } from "../../core/test/fixtures.js";
 import type { CodeRuntime } from "@tack/codemode";
 
 import { createTackAgentServer } from "../src/index.js";
+import { extractText } from "./mcp-content.js";
 
 describe("agent search", () => {
   it("finds inferred operations by full path while keeping schemas behind describe", async () => {
@@ -128,6 +129,7 @@ describe("MCP server", () => {
 
     try {
       const directExecuted = await directEngine.execute("return tools.grafana.datasources.list();");
+      const direct = directExecuted.result as { readonly search: unknown; readonly datasources: unknown };
       const mcpExecuted = await client.callTool({
         name: "execute",
         arguments: {
@@ -138,15 +140,15 @@ describe("MCP server", () => {
       expect(mcpExecuted.structuredContent).toEqual({
         status: "completed",
         result: {
-          search: directExecuted.result?.search,
-          datasources: directExecuted.result?.datasources
+          search: direct.search,
+          datasources: direct.datasources
         },
         logs: []
       });
       expect(mcpExecuted.isError).toBeUndefined();
       expect(extractText(mcpExecuted.content)).toBe(JSON.stringify({
-        search: directExecuted.result?.search,
-        datasources: directExecuted.result?.datasources
+        search: direct.search,
+        datasources: direct.datasources
       }, null, 2));
       expect(directCalls).toEqual([{ toolId: "grafana.list_datasources", args: {} }]);
       expect(mcpCalls).toEqual([{ toolId: "grafana.list_datasources", args: {} }]);
@@ -677,7 +679,9 @@ describe("MCP server", () => {
       policy: {
         deniedOperations: ["grafana.alerting.*"]
       },
-      onAuditEvent: (event) => audits.push(event)
+      onAuditEvent: (event) => {
+        audits.push(event);
+      }
     });
     const client = new Client({ name: "tack-test", version: "0.1.0" });
     const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
@@ -729,21 +733,3 @@ describe("MCP server", () => {
     }
   });
 });
-
-function extractText(content: unknown): string {
-  if (!Array.isArray(content)) {
-    return "";
-  }
-
-  return content
-    .flatMap((part) =>
-      typeof part === "object" &&
-      part !== null &&
-      !Array.isArray(part) &&
-      (part as { readonly type?: unknown }).type === "text" &&
-      typeof (part as { readonly text?: unknown }).text === "string"
-        ? [(part as { readonly text: string }).text]
-        : []
-    )
-    .join("\n");
-}

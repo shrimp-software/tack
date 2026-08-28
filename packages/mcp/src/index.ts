@@ -22,14 +22,25 @@ import {
   type McpServerConfigEntry
 } from "./client.js";
 
-export async function discoverMcpManifestPromise(config: TackConfig): Promise<TackManifest> {
+/**
+ * Discover only the MCP-backed (`stdio` / `http`) servers in a config, returning
+ * raw `DiscoveredServer` entries so a caller can merge them with other source
+ * kinds before a single `buildManifest` pass.
+ */
+export async function discoverMcpServers(config: TackConfig): Promise<DiscoveredServer[]> {
   const servers = ownValue<TackConfig["servers"]>(config, "servers");
-  const discovered = await Promise.all(
-    ownDataEntries<TackConfig["servers"][string]>(servers).map(([serverId, serverConfig]) =>
-      discoverServer(serverId, serverConfig)
-    )
+  return Promise.all(
+    ownDataEntries<TackConfig["servers"][string]>(servers)
+      .filter(([, serverConfig]) => {
+        const transport = ownValue<unknown>(serverConfig, "transport");
+        return transport === "stdio" || transport === "http";
+      })
+      .map(([serverId, serverConfig]) => discoverServer(serverId, serverConfig))
   );
-  return buildManifest(config, discovered);
+}
+
+export async function discoverMcpManifestPromise(config: TackConfig): Promise<TackManifest> {
+  return buildManifest(config, await discoverMcpServers(config));
 }
 
 export interface CreateMcpRuntimeOptions {

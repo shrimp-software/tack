@@ -140,6 +140,18 @@ function manifestServerConnection(
     };
   }
 
+  if (transport === "module") {
+    const entry = ownValue<string>(serverConfig, "entry");
+    if (typeof entry !== "string") {
+      return undefined;
+    }
+
+    return {
+      transport: "module",
+      entry
+    };
+  }
+
   return undefined;
 }
 

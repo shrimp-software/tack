@@ -66,7 +66,7 @@ describe("CLI", () => {
       "--no-discovery"
     ], tmpPath);
     expect(staticDoctor.stdout).toContain("[ok] Found config");
-    expect(staticDoctor.stdout).toContain("[warn] Skipped live MCP discovery");
+    expect(staticDoctor.stdout).toContain("[warn] Skipped live source discovery");
 
     const liveDoctor = await runCli(["doctor", "--config", configPath], tmpPath);
     expect(liveDoctor.stdout).toContain("[ok] Discovered");
@@ -139,6 +139,29 @@ describe("CLI", () => {
       'example.rules.list -> example.manage_rules {"operation":"list"}'
     );
 
+    const executed = await runCli([
+      "execute",
+      "return (await tools.example.echo({ message: 'from execute' })).data;",
+      "--config",
+      configPath,
+      "--json"
+    ], tmpPath);
+    expect(JSON.parse(executed.stdout)).toMatchObject({
+      ok: true,
+      result: { message: "from execute" }
+    });
+
+    const codePath = join(tmpPath, "probe.ts");
+    await writeFile(codePath, "const value: number = 2; return value + 3;", "utf8");
+    const fileExecuted = await runCli([
+      "execute",
+      "--file",
+      codePath,
+      "--config",
+      configPath
+    ], tmpPath);
+    expect(fileExecuted.stdout).toBe("5");
+
     const call = await runCli(
       [
         "call",
@@ -190,6 +213,12 @@ describe("CLI", () => {
       .split("\n")
       .map((line) => JSON.parse(line));
     expect(audit).toEqual([
+      expect.objectContaining({
+        path: "example.echo",
+        toolId: "example.echo",
+        allowed: true,
+        ok: true
+      }),
       expect.objectContaining({
         path: "example.echo",
         toolId: "example.echo",

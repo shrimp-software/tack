@@ -1,9 +1,15 @@
 #!/usr/bin/env node
-import { appendFile, mkdir, stat } from "node:fs/promises";
+import { appendFile, mkdir, readFile, stat } from "node:fs/promises";
 import { dirname } from "node:path";
 import { Command } from "commander";
 import { listenTackMcpHttp, serveTackMcpStdio } from "@tack/agent";
-import { isOperationAllowed, type OperationPolicy, type ToolAuditEvent } from "@tack/codemode";
+import {
+  createExecutionEngine,
+  isOperationAllowed,
+  type ExecutionResult,
+  type OperationPolicy,
+  type ToolAuditEvent
+} from "@tack/codemode";
 import {
   DEFAULT_CONFIG_PATH,
   DEFAULT_OUTPUT_DIR,
@@ -18,7 +24,7 @@ import {
   writeJsonPromise
 } from "@tack/core";
 import { generateDocsPromise, generateSdkPromise } from "@tack/generator";
-import { createMcpRuntime, discoverMcpManifestPromise } from "@tack/mcp";
+import { createRuntime, discoverManifest } from "@tack/sources";
 import { createQuickJSRuntime } from "@tack/runtime-quickjs";
 import { createWorkerdRuntime } from "@tack/runtime-workerd";
 import { listenTackHttpService } from "@tack/service";
@@ -159,7 +165,7 @@ program
         const policy = createOperationPolicy(config);
         const onAuditEvent = createAuditSink(config);
         const target = resolveCallTarget(manifest, path, Boolean(policy));
-        const runtime = await createMcpRuntime({ config, manifest });
+        const runtime = await createRuntime({ config, manifest });
         const started = Date.now();
 
         try {
@@ -200,6 +206,54 @@ program
     })
   );
 
+program
+  .command("execute")
+  .description("Execute TypeScript against discovered MCP tools")
+  .argument("[code]")
+  .option("-f, --file <path>", "read code from a file")
+  .option("-c, --config <path>", "config path", DEFAULT_CONFIG_PATH)
+  .option("--timeout-ms <ms>", "execution timeout override")
+  .option("--json", "print the complete execution envelope")
+  .action(async (
+    code: string | undefined,
+    options: { file?: string; config: string; timeoutMs?: string; json?: boolean }
+  ) =>
+    run(async () => {
+      const source = await resolveExecutionSource(code, options.file);
+      const { config, manifest } = await loadWorkspace(options.config);
+      const timeoutMs = options.timeoutMs ? parsePositiveInt(options.timeoutMs, "timeout-ms") : undefined;
+      const runtimeConfig: TackConfig = timeoutMs
+        ? {
+          ...config,
+          runtime: {
+            ...config.runtime,
+            timeoutMs
+          }
+        }
+        : config;
+      const runtime = await createRuntime({ config, manifest });
+      const policy = createOperationPolicy(config);
+      const onAuditEvent = createAuditSink(config);
+      const engine = createExecutionEngine({
+        manifest,
+        runtime,
+        codeRuntime: createCodeRuntime(runtimeConfig),
+        ...(policy ? { policy } : {}),
+        ...(onAuditEvent ? { onAuditEvent } : {})
+      });
+
+      try {
+        const result = await engine.execute(source);
+        printExecutionResult(result, Boolean(options.json));
+        if (!result.ok) {
+          process.exitCode = 1;
+        }
+      } finally {
+        await runtime.close();
+      }
+    })
+  );
+
 const skill = program
   .command("skill")
   .description("Print or install the Codex skill for Tack");
@@ -232,7 +286,7 @@ program
   .action(async (options: { config: string }) =>
     run(async () => {
       const { config, manifest } = await loadWorkspace(options.config);
-      const runtime = await createMcpRuntime({ config, manifest });
+      const runtime = await createRuntime({ config, manifest });
       const codeRuntime = createCodeRuntime(config);
       const policy = createOperationPolicy(config);
       const onAuditEvent = createAuditSink(config);
@@ -260,7 +314,7 @@ program
     run(async () => {
       const { config, manifest } = await loadWorkspace(options.config);
       const users = config.service?.users ?? [];
-      const runtime = await createMcpRuntime({ config, manifest });
+      const runtime = await createRuntime({ config, manifest });
       const codeRuntime = createCodeRuntime(config);
       const policy = createOperationPolicy(config);
       const onAuditEvent = createAuditSink(config);
@@ -297,7 +351,7 @@ program
         throw new Error("tack serve requires service.users with at least one bearer token");
       }
 
-      const runtime = await createMcpRuntime({ config, manifest });
+      const runtime = await createRuntime({ config, manifest });
       const codeRuntime = createCodeRuntime(config);
       const policy = createOperationPolicy(config);
       const onAuditEvent = createAuditSink(config);
@@ -364,7 +418,7 @@ async function loadWorkspace(configPath: string): Promise<{
   readonly manifest: TackManifest;
 }> {
   const config = await loadConfigPromise(configPath);
-  const manifest = await discoverMcpManifestPromise(config);
+  const manifest = await discoverManifest(config);
   return { config, manifest };
 }
 
@@ -462,6 +516,71 @@ function createCodeRuntime(config: TackConfig) {
       ...commonOptions,
       ...(config.runtime?.maxStackBytes ? { maxStackBytes: config.runtime.maxStackBytes } : {})
     });
+}
+
+async function resolveExecutionSource(
+  inlineCode: string | undefined,
+  filePath: string | undefined
+): Promise<string> {
+  if (inlineCode && filePath) {
+    throw new Error("Pass code inline, with --file, or through stdin, not more than one");
+  }
+
+  if (filePath) {
+    return readFile(filePath, "utf8");
+  }
+
+  if (inlineCode) {
+    return inlineCode;
+  }
+
+  if (process.stdin.isTTY) {
+    throw new Error("No code provided. Pass inline code, --file, or pipe code through stdin");
+  }
+
+  let source = "";
+  process.stdin.setEncoding("utf8");
+  for await (const chunk of process.stdin) {
+    source += chunk;
+  }
+  if (!source.trim()) {
+    throw new Error("Execution code is empty");
+  }
+  return source;
+}
+
+function printExecutionResult(result: ExecutionResult, json: boolean): void {
+  if (json) {
+    console.log(JSON.stringify(result, null, 2));
+    return;
+  }
+
+  for (const value of result.emitted) {
+    console.log(formatExecutionValue(value));
+  }
+  for (const line of result.logs) {
+    console.error(line);
+  }
+  if (result.ok && "result" in result) {
+    console.log(formatExecutionValue(result.result));
+  } else if (result.error) {
+    console.error(`${result.error.phase}: ${result.error.message}`);
+  }
+}
+
+function formatExecutionValue(value: unknown): string {
+  if (typeof value === "string") {
+    return value;
+  }
+  return JSON.stringify(value, null, 2) ?? "undefined";
+}
+
+function parsePositiveInt(value: string, name: string): number {
+  const parsed = Number(value);
+  if (!Number.isSafeInteger(parsed) || parsed <= 0) {
+    throw new Error(`${name} must be a positive integer`);
+  }
+  return parsed;
 }
 
 function waitForStdinClose(): Promise<void> {

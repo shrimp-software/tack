@@ -16,7 +16,12 @@ export interface HttpServerConfig {
   readonly headers?: Readonly<Record<string, string>> | undefined;
 }
 
-export type TackServerConfig = StdioServerConfig | HttpServerConfig;
+export interface ModuleServerConfig {
+  readonly transport: "module";
+  readonly entry: string;
+}
+
+export type TackServerConfig = StdioServerConfig | HttpServerConfig | ModuleServerConfig;
 
 export interface TackConfig {
   readonly servers: Readonly<Record<string, TackServerConfig>>;
@@ -64,7 +69,7 @@ export interface ServiceUserConfig {
 
 export interface TackManifestServer {
   readonly id: string;
-  readonly transport: "stdio" | "http";
+  readonly transport: "stdio" | "http" | "module";
   readonly command?: string | undefined;
   readonly args?: readonly string[] | undefined;
   readonly env?: Readonly<Record<string, string>> | undefined;
@@ -72,6 +77,7 @@ export interface TackManifestServer {
   readonly cwd?: string | undefined;
   readonly url?: string | undefined;
   readonly headers?: Readonly<Record<string, string>> | undefined;
+  readonly entry?: string | undefined;
   readonly tools: readonly string[];
 }
 

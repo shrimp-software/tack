@@ -1,6 +1,5 @@
 {
   "lockfileVersion": 1,
-  "configVersion": 1,
   "workspaces": {
     "": {
       "name": "tack",
@@ -24,6 +23,7 @@
       "devDependencies": {
         "@modelcontextprotocol/client": "2.0.0-beta.5",
         "@tack/runtime-quickjs": "workspace:*",
+        "@tack/sources": "workspace:*",
         "typescript": "^7.0.2",
         "vitest": "^4.1.10",
       },
@@ -39,10 +39,10 @@
         "@tack/codemode": "workspace:*",
         "@tack/core": "workspace:*",
         "@tack/generator": "workspace:*",
-        "@tack/mcp": "workspace:*",
         "@tack/runtime-quickjs": "workspace:*",
         "@tack/runtime-workerd": "workspace:*",
         "@tack/service": "workspace:*",
+        "@tack/sources": "workspace:*",
         "commander": "^15.0.0",
       },
       "devDependencies": {
@@ -138,6 +138,19 @@
       "devDependencies": {
         "@tack/runtime-quickjs": "workspace:*",
         "@tack/runtime-workerd": "workspace:*",
+        "typescript": "^7.0.2",
+        "vitest": "^4.1.10",
+      },
+    },
+    "packages/sources": {
+      "name": "@tack/sources",
+      "version": "0.1.0",
+      "dependencies": {
+        "@tack/core": "workspace:*",
+        "@tack/mcp": "workspace:*",
+        "zod": "^4.4.3",
+      },
+      "devDependencies": {
         "typescript": "^7.0.2",
         "vitest": "^4.1.10",
       },
@@ -293,6 +306,8 @@
     "@tack/runtime-workerd": ["@tack/runtime-workerd@workspace:packages/runtime-workerd"],
 
     "@tack/service": ["@tack/service@workspace:packages/service"],
+
+    "@tack/sources": ["@tack/sources@workspace:packages/sources"],
 
     "@turbo/darwin-64": ["@turbo/darwin-64@2.10.6", "", { "os": "darwin", "cpu": "x64" }, "sha512-S+yIyZkmjYBQbIM7sTqMAwnLeMjSK60Q9grUDPbTWvkRjbsn5k1Rt5sPvTX80M4PnlYQBwLiYsjlu6tHsuIqQQ=="],
 

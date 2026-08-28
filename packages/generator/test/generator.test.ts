@@ -272,10 +272,10 @@ describe("generateSdk", () => {
     expect(index).toContain("function ownDataRuntime(runtime: TackRuntime): TackRuntime");
     expect(index).not.toContain("options.config");
     expect(index).not.toContain("options.configPath");
-    expect(index).toContain('const { createMcpRuntime } = await import("@tack/mcp");');
-    expect(index).toContain("createMcpRuntime({ config, manifest })");
-    expect(index).not.toContain('import { createMcpRuntime } from "@tack/mcp";');
-    expect(index).not.toContain("discoverMcpManifestPromise");
+    expect(index).toContain('const { createRuntime } = await import("@tack/sources");');
+    expect(index).toContain("createRuntime({ config, manifest })");
+    expect(index).not.toContain('import { createRuntime } from "@tack/sources";');
+    expect(index).not.toContain("discoverManifest");
     expect(index).not.toContain("FakeActivitiesAddToIncidentInput");
     expect(index).not.toContain("Add activity to an incident.");
     expect(index).not.toContain("http_status");
@@ -2629,7 +2629,8 @@ async function expectGeneratedSdkToCompile(outDir: string): Promise<void> {
       typeRoots: [join(repoRoot, "node_modules", "@types")],
       paths: {
         "@tack/core": [relative(outDir, join(repoRoot, "packages", "core", "src", "index.ts"))],
-        "@tack/mcp": [relative(outDir, join(repoRoot, "packages", "mcp", "src", "index.ts"))]
+        "@tack/mcp": [relative(outDir, join(repoRoot, "packages", "mcp", "src", "index.ts"))],
+        "@tack/sources": [relative(outDir, join(repoRoot, "packages", "sources", "src", "index.ts"))]
       }
     },
     include: [join(outDir, "*.ts")]
