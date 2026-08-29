@@ -30,8 +30,8 @@ export function buildManifest(
   kinds: readonly SourceKind[] = BUILTIN_SOURCE_KINDS
 ): TackManifest {
   // The trust boundary: config and discovery results may be hand-built or come
-  // straight off an MCP server. Snapshot both to plain own-data once, then read
-  // plain typed fields for the rest of the function.
+  // straight off an MCP server. Sanitize both once here, then read plain typed
+  // fields for the rest of the function.
   const cleanConfig = sanitizeData(config, {
     onCycle: "Cyclic Tack config data is not supported"
   }) as TackConfig;

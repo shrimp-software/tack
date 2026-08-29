@@ -4,7 +4,6 @@ export * from "./errors.js";
 export * from "./ids.js";
 export * from "./manifest.js";
 export * from "./operations.js";
-export * from "./own-data.js";
 export * from "./result.js";
 export * from "./sanitize.js";
 export * from "./schema-data.js";

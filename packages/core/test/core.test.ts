@@ -15,10 +15,6 @@ import {
   parseConfig,
   listOperations,
   operationArgs,
-  ownDataEntries,
-  ownDataRecord,
-  ownDataValue,
-  ownDataValues,
   sanitizeId,
   TackConfigError,
   TackGeneratorError,
@@ -812,47 +808,6 @@ describe("errors", () => {
     expect(formatTackError(inheritedMessage)).toBe("[object Object]");
     expect(formatTackError(prototypeMessageError)).toBe("Error");
     expect(formatTackError("plain")).toBe("plain");
-  });
-});
-
-describe("own data helpers", () => {
-  it("reads only own data properties", () => {
-    const source = Object.create({ inherited: "nope" }) as Record<string, unknown>;
-    Object.defineProperty(source, "visible", { enumerable: true, value: 1 });
-    Object.defineProperty(source, "nonEnumerable", { enumerable: false, value: 2 });
-    Object.defineProperty(source, "computed", {
-      enumerable: true,
-      get: () => {
-        throw new Error("accessor should not run");
-      }
-    });
-    Object.defineProperty(source, "explicitUndefined", { enumerable: true, value: undefined });
-
-    expect(ownDataValue(source, "visible")).toBe(1);
-    expect(ownDataValue(source, "computed")).toBeUndefined();
-    expect(ownDataValue(source, "inherited")).toBeUndefined();
-    expect(Object.hasOwn(source, "explicitUndefined")).toBe(true);
-    expect(ownDataValue(source, "explicitUndefined")).toBeUndefined();
-    expect(ownDataEntries(source)).toEqual([
-      ["visible", 1],
-      ["explicitUndefined", undefined]
-    ]);
-    expect(ownDataValues(source)).toEqual([1, undefined]);
-  });
-
-  it("copies own enumerable data into a null-prototype record", () => {
-    const source = Object.create({ inherited: "nope" }) as Record<string, unknown>;
-    Object.defineProperty(source, "__proto__", { enumerable: true, value: "data" });
-    Object.defineProperty(source, "nonEnumerable", { enumerable: false, value: "nope" });
-
-    const record = ownDataRecord(source);
-    const empty = ownDataRecord("not an object");
-
-    expect(Object.getPrototypeOf(record)).toBeNull();
-    expect(Object.keys(record)).toEqual(["__proto__"]);
-    expect(record["__proto__"]).toBe("data");
-    expect(Object.getPrototypeOf(empty)).toBeNull();
-    expect(Object.keys(empty)).toEqual([]);
   });
 });
 

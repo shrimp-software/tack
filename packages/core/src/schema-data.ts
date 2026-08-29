@@ -1,50 +1,9 @@
 import type { JsonSchema } from "./types.js";
-import { ownDataValue as ownValue } from "./own-data.js";
-
-export interface CloneJsonDataOptions {
-  readonly cycleMessage: string;
-}
 
 export function objectRecord(value: unknown): Record<string, unknown> | undefined {
   return typeof value === "object" && value !== null && !Array.isArray(value)
     ? value as Record<string, unknown>
     : undefined;
-}
-
-export function cloneJsonData(
-  value: unknown,
-  options: CloneJsonDataOptions,
-  seen = new WeakSet<object>()
-): unknown {
-  if (typeof value !== "object" || value === null) {
-    return value;
-  }
-
-  if (seen.has(value)) {
-    throw new Error(options.cycleMessage);
-  }
-  seen.add(value);
-
-  if (Array.isArray(value)) {
-    const next: unknown[] = [];
-    for (let index = 0; index < value.length; index += 1) {
-      const descriptor = Object.getOwnPropertyDescriptor(value, String(index));
-      if (descriptor?.enumerable && "value" in descriptor) {
-        next[index] = cloneJsonData(descriptor.value, options, seen);
-      }
-    }
-    seen.delete(value);
-    return next;
-  }
-
-  const next: Record<string, unknown> = {};
-  for (const [key, descriptor] of Object.entries(Object.getOwnPropertyDescriptors(value))) {
-    if (descriptor.enumerable && "value" in descriptor) {
-      next[key] = cloneJsonData(descriptor.value, options, seen);
-    }
-  }
-  seen.delete(value);
-  return next;
 }
 
 export function stripTypeScriptSchemaExtensions(value: unknown): void {
@@ -135,7 +94,7 @@ export function visitSchemaNodes(
 }
 
 export function schemaProperties(schema: JsonSchema): Record<string, unknown> | undefined {
-  return objectRecord(ownValue(schema, "properties"));
+  return objectRecord(schema["properties"]);
 }
 
 function visitSchemaNodeOrArray(
