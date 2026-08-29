@@ -1,10 +1,10 @@
 import { compile } from "json-schema-to-typescript";
 import {
   assertLocalSchemaRefs,
-  cloneJsonData,
   dedupeName,
   objectRecord,
   pruneEmptySchemaCompositionArrays,
+  sanitizeData,
   stripSchemaCompilerMetadata,
   stripTypeScriptSchemaExtensions,
   visitSchemaNodes,
@@ -21,9 +21,7 @@ export function compileSchema(schema: JsonSchema, typeName: string): Promise<str
 }
 
 function schemaForTypeScript(schema: JsonSchema, typeName: string): JsonSchema {
-  const next = cloneJsonData(schema, {
-    cycleMessage: "Cyclic JSON Schema data is not supported in generated SDK types"
-  }) as JsonSchema;
+  const next = sanitizeData(schema, {}) as JsonSchema;
   normalizeLiteralRefData(next);
   stripTypeScriptSchemaExtensions(next);
   stripSchemaCompilerMetadata(next);

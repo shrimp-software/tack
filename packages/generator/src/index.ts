@@ -2,7 +2,8 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import {
   TackGeneratorError,
-  ownDataValue as ownValue,
+  ownField,
+  sanitizeData,
   type TackManifest
 } from "@tack/core";
 
@@ -25,8 +26,8 @@ export interface GenerateDocsOptions {
 
 export function generateSdkPromise(options: GenerateSdkOptions): Promise<void> {
   return wrapGeneratorError("Failed to generate Tack SDK", async () => {
-    const manifest = ownValue<TackManifest>(options, "manifest") as TackManifest;
-    const outDir = ownValue<string>(options, "outDir") as string;
+    const manifest = sanitizeData(ownField(options, "manifest"), {}) as TackManifest;
+    const outDir = ownField<string>(options, "outDir") ?? "";
     assertSupportedManifest(manifest);
 
     const methods = toGeneratedMethods(plannedOperations(manifest));
@@ -37,9 +38,9 @@ export function generateSdkPromise(options: GenerateSdkOptions): Promise<void> {
 
 export function generateDocsPromise(options: GenerateDocsOptions): Promise<void> {
   return wrapGeneratorError("Failed to generate Tack docs", async () => {
-    const manifest = ownValue<TackManifest>(options, "manifest") as TackManifest;
-    const outFile = ownValue<string>(options, "outFile") as string;
-    const title = ownValue<string>(options, "title");
+    const manifest = sanitizeData(ownField(options, "manifest"), {}) as TackManifest;
+    const outFile = ownField<string>(options, "outFile") ?? "";
+    const title = ownField<string>(options, "title");
     assertSupportedManifest(manifest);
 
     await mkdir(dirname(outFile), { recursive: true });

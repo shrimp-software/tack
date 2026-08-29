@@ -1,8 +1,5 @@
 import {
   objectRecord,
-  ownDataEntries,
-  ownDataValue as ownValue,
-  ownDataValues,
   type TackManifest
 } from "@tack/core";
 
@@ -14,32 +11,32 @@ export function assertSupportedManifest(manifest: TackManifest): void {
     throw new Error("Invalid Tack manifest: manifest must be an object");
   }
 
-  const version = ownValue<unknown>(record, "version");
+  const version = record["version"];
   if (version !== "0.1") {
     throw new Error(`Unsupported Tack manifest version: ${String(version)}`);
   }
 
-  if (typeof ownValue<unknown>(record, "generatedAt") !== "string") {
+  if (typeof record["generatedAt"] !== "string") {
     throw new Error("Invalid Tack manifest: generatedAt must be a string");
   }
 
-  const servers = objectRecord(ownValue(record, "servers"));
+  const servers = objectRecord(record["servers"]);
   if (!servers) {
     throw new Error("Invalid Tack manifest: servers must be an object");
   }
 
-  const tools = objectRecord(ownValue(record, "tools"));
+  const tools = objectRecord(record["tools"]);
   if (!tools) {
     throw new Error("Invalid Tack manifest: tools must be an object");
   }
 
-  for (const [serverId, server] of ownDataEntries<unknown>(servers)) {
+  for (const [serverId, server] of Object.entries(servers)) {
     if (!objectRecord(server)) {
       throw new Error(`Invalid Tack manifest server entry ${serverId}: server must be an object`);
     }
   }
 
-  for (const [toolId, tool] of ownDataEntries<unknown>(tools)) {
+  for (const [toolId, tool] of Object.entries(tools)) {
     if (!objectRecord(tool)) {
       throw new Error(`Invalid Tack manifest tool entry ${toolId}: tool must be an object`);
     }
@@ -55,22 +52,22 @@ export function assertSafeGeneratedServerNames(serverNames: Iterable<string>): v
 }
 
 export function assertVisibleManifestToolsArePlannable(manifest: TackManifest): void {
-  for (const [entryId, tool] of ownDataEntries<unknown>(manifest.tools)) {
+  for (const [entryId, tool] of Object.entries(manifest.tools)) {
     const record = objectRecord(tool);
     if (!record) {
       throw new Error(`Invalid Tack manifest tool entry ${entryId}: tool must be an object`);
     }
 
-    const id = ownValue<unknown>(record, "id");
+    const id = record["id"];
     if (id !== entryId) {
       throw new Error(`Visible manifest tool entry ${entryId} has mismatched id ${String(id)}`);
     }
 
-    const serverId = ownValue<unknown>(record, "serverId");
-    const namespaceName = ownValue<unknown>(record, "namespaceName");
-    const sdkName = ownValue<unknown>(record, "sdkName");
-    const upstreamName = ownValue<unknown>(record, "upstreamName");
-    const inputSchema = ownValue<unknown>(record, "inputSchema");
+    const serverId = record["serverId"];
+    const namespaceName = record["namespaceName"];
+    const sdkName = record["sdkName"];
+    const upstreamName = record["upstreamName"];
+    const inputSchema = record["inputSchema"];
     if (
       typeof serverId !== "string" ||
       typeof namespaceName !== "string" ||
@@ -88,7 +85,7 @@ export function assertRuntimeManifestServerCoverage(
   methods: readonly GeneratedMethod[]
 ): void {
   for (const method of methods) {
-    const server = ownValue<unknown>(manifest.servers, method.serverId);
+    const server = manifest.servers[method.serverId];
     const record = objectRecord(server);
     if (!record) {
       throw new Error(
@@ -96,11 +93,11 @@ export function assertRuntimeManifestServerCoverage(
       );
     }
 
-    const id = ownValue<unknown>(record, "id");
-    const transport = ownValue<unknown>(record, "transport");
-    const tools = ownValue<unknown>(record, "tools");
+    const id = record["id"];
+    const transport = record["transport"];
+    const tools = record["tools"];
     const toolIds = Array.isArray(tools)
-      ? ownDataValues<unknown>(tools).filter((toolId): toolId is string => typeof toolId === "string")
+      ? tools.filter((toolId): toolId is string => typeof toolId === "string")
       : [];
     if (
       id !== method.serverId ||

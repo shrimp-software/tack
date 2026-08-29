@@ -1,9 +1,6 @@
 import {
   hasRequiredInput,
   objectRecord,
-  ownDataEntries,
-  ownDataValue as ownValue,
-  ownDataValues,
   type TackManifest
 } from "@tack/core";
 
@@ -250,51 +247,43 @@ function toSdkRuntimeManifest(
     version: manifest.version,
     generatedAt: SDK_RUNTIME_MANIFEST_GENERATED_AT,
     servers: Object.fromEntries(
-      ownDataEntries<unknown>(manifest.servers)
+      Object.entries(manifest.servers)
         .filter(([id]) => serverToolIds.has(id))
         .flatMap(([id, server]) => {
-          const record = objectRecord(server);
-          const serverId = ownValue<string>(record, "id");
-          const transport = ownValue<TackManifest["servers"][string]["transport"]>(record, "transport");
-          const tools = ownValue<readonly string[]>(record, "tools");
-          const toolIdsForServer = Array.isArray(tools)
-            ? ownDataValues<unknown>(tools).filter((toolId): toolId is string => typeof toolId === "string")
-            : [];
-          return record && serverId && transport && Array.isArray(tools)
-            ? [[
-                id,
-                {
-                  id: serverId,
-                  transport,
-                  tools: toolIdsForServer.filter((toolId) => toolIds.has(toolId))
-                }
-              ]]
-            : [];
+          const { id: serverId, transport, tools } = server;
+          if (typeof serverId !== "string" || typeof transport !== "string" || !Array.isArray(tools)) {
+            return [];
+          }
+          return [[
+            id,
+            {
+              id: serverId,
+              transport,
+              tools: tools.filter(
+                (toolId): toolId is string => typeof toolId === "string" && toolIds.has(toolId)
+              )
+            }
+          ]];
         })
     ),
     tools: Object.fromEntries(
-      ownDataEntries<unknown>(manifest.tools)
+      Object.entries(manifest.tools)
         .filter(([id]) => toolIds.has(id))
         .flatMap(([id, tool]) => {
-          const record = objectRecord(tool);
-          const toolId = ownValue<string>(record, "id");
-          const serverId = ownValue<string>(record, "serverId");
-          const namespaceName = ownValue<string>(record, "namespaceName");
-          const sdkName = ownValue<string>(record, "sdkName");
-          const upstreamName = ownValue<string>(record, "upstreamName");
-          return record && toolId && serverId && namespaceName && sdkName && upstreamName
-            ? [[
-                id,
-                {
-                  id: toolId,
-                  serverId,
-                  namespaceName,
-                  sdkName,
-                  upstreamName,
-                  inputSchema: {}
-                }
-              ]]
-            : [];
+          const { id: toolId, serverId, namespaceName, sdkName, upstreamName } = tool;
+          if (
+            typeof toolId !== "string" ||
+            typeof serverId !== "string" ||
+            typeof namespaceName !== "string" ||
+            typeof sdkName !== "string" ||
+            typeof upstreamName !== "string"
+          ) {
+            return [];
+          }
+          return [[
+            id,
+            { id: toolId, serverId, namespaceName, sdkName, upstreamName, inputSchema: {} }
+          ]];
         })
     )
   };
