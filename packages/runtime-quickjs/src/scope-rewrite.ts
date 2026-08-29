@@ -72,7 +72,20 @@ export async function rewriteCellScope(
   const reExpose = [...priorNames].filter((name) => !declaredNames.has(name));
   const prelude = reExpose.length > 0 ? `let { ${reExpose.join(", ")} } = __scope;\n` : "";
 
-  return { code: prelude + body, declaredNames: [...declaredNames] };
+  // Mirror every in-scope name back to `__scope` at the end of the cell so a
+  // reassignment (`count++`) persists to the next cell. Guarded so a name still
+  // in its TDZ can't mask an error. Runs only if the cell finishes normally —
+  // a cell that `return`s or `throw`s does not persist its reassignments.
+  const mirrored = [...reExpose, ...declaredNames];
+  const trailer =
+    mirrored.length > 0
+      ? "\n" +
+        mirrored
+          .map((name) => `try { __scope[${JSON.stringify(name)}] = ${name}; } catch {}`)
+          .join(" ")
+      : "";
+
+  return { code: prelude + body + trailer, declaredNames: [...declaredNames] };
 }
 
 function cellBlock(program: Program): BlockStatement {

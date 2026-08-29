@@ -345,6 +345,70 @@ describe("quickjs session", () => {
     expect(afterClose).toMatchObject({ ok: false, error: { message: "Session is closed" } });
   });
 
+  it("persists reassignments across cells unless the cell returns first", async () => {
+    const runtime = createQuickJSRuntime({ timeoutMs: 5_000 });
+    const session = await runtime.createSession!();
+    try {
+      await session.exec({
+        code: "let count = 0;\nlet kept = 1;",
+        invoker: fakeInvoker([]),
+        toolsPrelude: renderToolsPrelude()
+      });
+      await session.exec({
+        code: "count += 5;\nkept += 10;",
+        invoker: fakeInvoker([]),
+        toolsPrelude: renderToolsPrelude()
+      });
+      const seen = await session.exec({
+        code: "return { count, kept };",
+        invoker: fakeInvoker([]),
+        toolsPrelude: renderToolsPrelude()
+      });
+      expect(seen).toMatchObject({ ok: true, result: { count: 5, kept: 11 } });
+
+      // a cell that returns before finishing does not persist its own reassignment
+      await session.exec({
+        code: "count = 999;\nreturn count;",
+        invoker: fakeInvoker([]),
+        toolsPrelude: renderToolsPrelude()
+      });
+      const after = await session.exec({
+        code: "return count;",
+        invoker: fakeInvoker([]),
+        toolsPrelude: renderToolsPrelude()
+      });
+      expect(after).toMatchObject({ ok: true, result: 5 });
+    } finally {
+      await session.close();
+    }
+  });
+
+  it("close() waits for an in-flight cell instead of disposing under it", async () => {
+    const runtime = createQuickJSRuntime({ timeoutMs: 5_000 });
+    const session = await runtime.createSession!();
+
+    const slowInvoker: ToolInvoker = {
+      invoke: () => new Promise((resolve) => setTimeout(() => resolve({ ok: true, data: 1, text: "1" }), 40))
+    };
+
+    const cell = session.exec({
+      code: "const x = await tools.call('demo.echo', {}); return x.data;",
+      invoker: slowInvoker,
+      toolsPrelude: renderToolsPrelude()
+    });
+    await session.close();
+    const result = await cell;
+    expect(result.ok).toBe(true);
+    expect(result.result).toBe(1);
+
+    const afterClose = await session.exec({
+      code: "return 1;",
+      invoker: fakeInvoker([]),
+      toolsPrelude: renderToolsPrelude()
+    });
+    expect(afterClose).toMatchObject({ ok: false, error: { message: "Session is closed" } });
+  });
+
   it("retains a large return value as a ref and dereferences it", async () => {
     const runtime = createQuickJSRuntime({ timeoutMs: 5_000, maxInlineResultBytes: 200 });
     const session = await runtime.createSession!();

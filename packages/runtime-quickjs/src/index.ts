@@ -426,6 +426,7 @@ async function createQuickJSSession(
 
   let closed = false;
   let running = false;
+  let currentCell: Promise<unknown> = Promise.resolve();
   let cellDeadline = Number.POSITIVE_INFINITY;
   let cellAbort: AbortSignal | undefined;
   let cellDeadlineExceeded = false;
@@ -520,7 +521,15 @@ async function createQuickJSSession(
   return {
     exec: (input, signal) => {
       const normalized = normalizeCodeRuntimeExecuteInput(input);
-      return normalized.ok ? exec(normalized.value, signal) : Promise.resolve(normalized.result);
+      if (!normalized.ok) {
+        return Promise.resolve(normalized.result);
+      }
+      const pending = exec(normalized.value, signal);
+      currentCell = pending.then(
+        () => undefined,
+        () => undefined
+      );
+      return pending;
     },
     deref: async (ref, derefOptions) => {
       if (closed) {
@@ -535,7 +544,10 @@ async function createQuickJSSession(
       if (closed) {
         return;
       }
+      // Signal any in-flight cell to abort (the interrupt handler honours
+      // `closed`), then wait for it to unwind before disposing the context.
       closed = true;
+      await currentCell;
       refs.dispose();
       disposeHandle(scopeHandle);
       context.runtime.removeInterruptHandler();

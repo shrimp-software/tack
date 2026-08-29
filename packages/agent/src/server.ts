@@ -65,11 +65,15 @@ export function createTackAgentServer(
     { capabilities: { tools: {} } }
   );
 
+  const executeDescription = sessionsSupported
+    ? `${engine.getDescription()}\n\nMulti-step work: open a \`session\` and pass its id here so scope carries across calls.`
+    : engine.getDescription();
+
   server.registerTool(
     "execute",
     {
       title: "Execute Tack code",
-      description: engine.getDescription(),
+      description: executeDescription,
       inputSchema: z.object({
         code: z.string().trim().min(1),
         session: z

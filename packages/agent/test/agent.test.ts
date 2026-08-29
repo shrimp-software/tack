@@ -581,6 +581,8 @@ describe("MCP server", () => {
       expect(listed.tools.find((tool) => tool.name === "execute")?.description)
         .toContain("## Available namespaces");
       expect(listed.tools.find((tool) => tool.name === "execute")?.description)
+        .toContain("open a `session`");
+      expect(listed.tools.find((tool) => tool.name === "execute")?.description)
         .toContain('guide({ name: "execute" })');
       expect(listed.tools.find((tool) => tool.name === "execute")?.description)
         .not.toContain("## Workflow");
@@ -640,6 +642,10 @@ describe("MCP server", () => {
     await Promise.all([server.connect(serverTransport), client.connect(clientTransport)]);
 
     try {
+      const listed = await client.listTools();
+      expect(listed.tools.find((tool) => tool.name === "execute")?.description)
+        .not.toContain("open a `session`");
+
       const opened = await client.callTool({ name: "session", arguments: {} });
       expect(opened.isError).toBe(true);
       expect(extractText(opened.content)).toContain("persistent connection");
