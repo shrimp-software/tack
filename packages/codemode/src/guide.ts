@@ -60,7 +60,7 @@ export function renderExecuteGuide(
     "",
     "## Workflow",
     "",
-    "1. Start inside `execute` with `tools.search({ query })` when you do not already know the operation path.",
+    "1. `tools.search({ query: \"\" })` lists namespaces; `tools.search({ query: \"\", namespace })` lists that namespace's operations; `tools.search({ query })` keyword-searches across all of them.",
     "2. Use `tools.describe.tool({ path })` to inspect the selected tool's input and output shapes.",
     "3. Call operations with `tools.call(path, args)` or inferred methods like `tools.grafana.datasources.list(args)`.",
     "4. Use `emit(value)` for user-visible intermediate output and `return value` for the final result.",

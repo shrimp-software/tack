@@ -1,7 +1,7 @@
 export function renderToolsPrelude(): string {
   return `
 const __tackToolPathError = (path) =>
-  new Error((path.length === 0 ? "tools" : "tools." + path.join(".")) + " is a lazy proxy and cannot be enumerated. Call tools.search({ query: \\"\\" }) to list every operation, or tools.describe.tool({ path }) for one.");
+  new Error((path.length === 0 ? "tools" : "tools." + path.join(".")) + " is a lazy proxy and cannot be enumerated. Call tools.search({ query: \\"\\" }) to list namespaces, then tools.search({ query: \\"\\", namespace }) for its operations.");
 
 const __tackCreateTools = (path = []) => new Proxy(() => undefined, {
   get(_target, prop) {

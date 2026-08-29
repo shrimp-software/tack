@@ -8,7 +8,7 @@ import {
 
 import { describeTool, normalizeDescribeToolInput } from "./describe.js";
 import { isOperationAllowed, type OperationPolicy } from "./policy.js";
-import { normalizeSearchInput, searchOperations } from "./search.js";
+import { listNamespaces, normalizeSearchInput, searchOperations } from "./search.js";
 import type { BuiltinTraceEvent, ToolCallOutput, ToolInvoker, ToolTraceEvent } from "./types.js";
 
 export interface CreateTackToolInvokerOptions {
@@ -48,9 +48,14 @@ export function createTackToolInvoker(
       const path = typeof pathInput === "string" ? pathInput : "";
       const args = ownField<unknown>(input, "args");
       if (path === "search") {
-        return traceBuiltin(context, "search", () =>
-          searchOperations(context.manifest, normalizeSearchInput(args), context.policy)
-        );
+        return traceBuiltin(context, "search", () => {
+          const searchInput = normalizeSearchInput(args);
+          // A bare `search({ query: "" })` returns the namespace index — the
+          // top-level catalog view — instead of the full flat operation list.
+          return searchInput.query.length === 0 && searchInput.namespace === undefined
+            ? listNamespaces(context.manifest, context.policy)
+            : searchOperations(context.manifest, searchInput, context.policy);
+        });
       }
 
       if (path === "describe.tool") {

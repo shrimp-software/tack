@@ -32,6 +32,45 @@ export interface SearchResult {
   readonly nextOffset: number | null;
 }
 
+export interface NamespaceSummary {
+  readonly namespace: string;
+  readonly serverId: string;
+  readonly operations: number;
+}
+
+export interface NamespaceIndex {
+  readonly namespaces: readonly NamespaceSummary[];
+  readonly total: number;
+}
+
+/**
+ * The top-level catalog view: one entry per namespace with its operation count.
+ * This is what `tools.search({ query: "" })` returns — pick a namespace, then
+ * `tools.search({ query: "", namespace })` to list its operations.
+ */
+export function listNamespaces(manifest: TackManifest, policy?: OperationPolicy): NamespaceIndex {
+  const operations = filterAllowedOperations(listOperations(manifest), policy);
+  const byNamespace = new Map<string, { serverId: string; operations: number }>();
+  for (const operation of operations) {
+    const existing = byNamespace.get(operation.namespaceName);
+    if (existing) {
+      existing.operations += 1;
+    } else {
+      byNamespace.set(operation.namespaceName, { serverId: operation.serverId, operations: 1 });
+    }
+  }
+
+  const namespaces = [...byNamespace.entries()]
+    .map(([namespace, { serverId, operations: count }]) => ({
+      namespace,
+      serverId,
+      operations: count
+    }))
+    .sort((left, right) => left.namespace.localeCompare(right.namespace));
+
+  return { namespaces, total: operations.length };
+}
+
 export function searchOperations(
   manifest: TackManifest,
   input: SearchInput,

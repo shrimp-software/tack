@@ -205,6 +205,22 @@ describe("codemode operation helpers", () => {
     });
   });
 
+  it("returns the namespace index for a bare empty-query search", async () => {
+    const invoker = createTackToolInvoker({
+      manifest: grafanaManifest(),
+      runtime: fakeRuntime([])
+    });
+
+    const index = await invoker.invoke({ path: "search", args: { query: "" } });
+    expect(index).toEqual({
+      namespaces: [{ namespace: "grafana", serverId: "grafana", operations: 3 }],
+      total: 3
+    });
+
+    const ops = await invoker.invoke({ path: "search", args: { query: "", namespace: "grafana" } });
+    expect(ops).toMatchObject({ total: 3, items: expect.any(Array) });
+  });
+
   it("invokes without reading accessor call input fields", async () => {
     const calls: Array<{ toolId: string; args: unknown }> = [];
     const invoker = createTackToolInvoker({
