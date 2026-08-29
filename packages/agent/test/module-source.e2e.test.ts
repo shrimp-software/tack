@@ -67,44 +67,39 @@ describe("module source over MCP (e2e)", () => {
     const agent = await connectAgent();
     try {
       const { tools } = await agent.client.listTools();
-      expect(tools.map((tool) => tool.name).sort()).toEqual(["deref", "execute", "session"]);
+      expect(tools.map((tool) => tool.name).sort()).toEqual(["deref", "execute"]);
     } finally {
       await agent.close();
     }
   });
 
-  it("retains a large session result as a ref and derefs it", async () => {
+  it("retains a large result as a ref and derefs it from the auto-session", async () => {
     const agent = await connectAgent();
     try {
-      const opened = await agent.client.callTool({ name: "session", arguments: {} });
-      const sessionId = (opened.structuredContent as { session: string }).session;
-
       const big = await agent.client.callTool({
         name: "execute",
         arguments: {
-          session: sessionId,
           code: "return Array.from({ length: 400 }, (_, i) => ({ i, blob: 'x'.repeat(50) }));"
         }
       });
       expect((big.structuredContent as { result: { __tackRef?: string } }).result.__tackRef).toBe("$1");
+      expect((big.structuredContent as { session?: string }).session).toMatch(/^s_/);
       expect(extractText(big.content)).toContain("retained; use `$1`");
 
       const counted = await agent.client.callTool({
         name: "execute",
-        arguments: { session: sessionId, code: "return $1.length;" }
+        arguments: { code: "return $1.length;" }
       });
       expect(counted.structuredContent).toMatchObject({ status: "completed", result: 400 });
 
       const page = await agent.client.callTool({
         name: "deref",
-        arguments: { session: sessionId, ref: "$1", limit: 2 }
+        arguments: { ref: "$1", limit: 2 }
       });
       expect(page.structuredContent).toMatchObject({
         truncated: true,
         value: [{ i: 0 }, { i: 1 }]
       });
-
-      await agent.client.callTool({ name: "session", arguments: { close: sessionId } });
     } finally {
       await agent.close();
     }
@@ -202,17 +197,12 @@ describe("module source over MCP (e2e)", () => {
     }
   });
 
-  it("carries scope across execute cells in a session", async () => {
+  it("carries scope across bare execute cells and resets on fresh", async () => {
     const agent = await connectAgent();
     try {
-      const opened = await agent.client.callTool({ name: "session", arguments: {} });
-      const sessionId = (opened.structuredContent as { session: string }).session;
-      expect(sessionId).toMatch(/^s_/);
-
       const first = await agent.client.callTool({
         name: "execute",
         arguments: {
-          session: sessionId,
           code: `const doc = await tools.call("docs.read", { slug: "architecture" });\nconst title = doc.data.title;`
         }
       });
@@ -220,24 +210,16 @@ describe("module source over MCP (e2e)", () => {
 
       const second = await agent.client.callTool({
         name: "execute",
-        arguments: { session: sessionId, code: `return title.toUpperCase();` }
+        arguments: { code: `return title.toUpperCase();` }
       });
-      expect(second.structuredContent).toMatchObject({
-        status: "completed",
-        result: "ARCHITECTURE"
-      });
+      expect(second.structuredContent).toMatchObject({ status: "completed", result: "ARCHITECTURE" });
 
-      const closed = await agent.client.callTool({
-        name: "session",
-        arguments: { close: sessionId }
-      });
-      expect(closed.isError).toBeUndefined();
-
-      const afterClose = await agent.client.callTool({
+      // `fresh: true` starts a clean scope — the earlier `title` is gone.
+      const afterFresh = await agent.client.callTool({
         name: "execute",
-        arguments: { session: sessionId, code: "return 1;" }
+        arguments: { fresh: true, code: "return title;" }
       });
-      expect(afterClose.isError).toBe(true);
+      expect(afterFresh.structuredContent).toMatchObject({ status: "error" });
     } finally {
       await agent.close();
     }

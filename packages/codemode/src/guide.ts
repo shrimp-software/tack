@@ -21,7 +21,7 @@ export function createExecuteDescription(
     "4. `emit(value)` is user-visible output; `return value` is the model-readable final result.",
     "",
     "A large value comes back as `{ __tackRef: \"$1\", type, preview }` — use `$1` / `$_` in the",
-    "next cell, or `deref({ session, ref })` (the `session` id is in each result).",
+    "next cell, or `deref({ ref: \"$1\" })` to page it out.",
     "",
     "`emit` forwards MCP content blocks as-is; a `{ _tag: \"ToolFile\", mimeType, encoding: \"base64\",",
     "data, byteLength, name? }` renders by MIME (image/audio/text/resource). Return ordinary",

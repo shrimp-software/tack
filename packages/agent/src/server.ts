@@ -135,50 +135,13 @@ export function createTackAgentServer(
   );
 
   server.registerTool(
-    "session",
-    {
-      title: "Open or close a code-mode session",
-      description: [
-        "Open a persistent code-mode session, then pass its id to `execute` as `session`.",
-        "Top-level `const`/`let`/`function`/`class` from one cell are visible to the next.",
-        "Call with `{ close }` to release a session; sessions also expire when idle."
-      ].join("\n"),
-      inputSchema: z.object({
-        close: z.string().optional().describe("Session id to close.")
-      })
-    },
-    async ({ close }) => {
-      if (close !== undefined) {
-        const closed = await sessions.close(close);
-        return {
-          content: [{ type: "text", text: closed ? `Closed ${close}` : `No session "${close}"` }],
-          ...(closed ? {} : { isError: true as const })
-        };
-      }
-
-      if (!sessionsSupported) {
-        return {
-          content: [{ type: "text", text: SESSIONS_UNAVAILABLE }],
-          isError: true
-        };
-      }
-
-      const id = await sessions.open();
-      return {
-        content: [{ type: "text", text: id }],
-        structuredContent: { session: id }
-      };
-    }
-  );
-
-  server.registerTool(
     "deref",
     {
       title: "Read a retained code-mode ref",
-      description: "Retrieve a value an `execute` cell kept as a ref (e.g. `$1`). Arrays and strings page by `offset`/`limit`.",
+      description: "Retrieve a value an `execute` cell kept as a ref (e.g. `$1`). Defaults to this connection's session; arrays and strings page by `offset`/`limit`.",
       inputSchema: z.object({
-        session: z.string(),
         ref: z.string().regex(/^\$(\d+|_)$/, 'ref must be "$1", "$2", … or "$_"'),
+        session: z.string().optional().describe("Session id (from an `execute` result). Omit for this connection's session."),
         offset: z.number().int().min(0).optional(),
         limit: z.number().int().min(1).max(1000).optional()
       })
@@ -187,9 +150,13 @@ export function createTackAgentServer(
       if (!sessionsSupported) {
         return { content: [{ type: "text", text: SESSIONS_UNAVAILABLE }], isError: true };
       }
-      const entry = sessions.get(session);
+      const targetId = session ?? defaultSessionId;
+      const entry = targetId === undefined ? undefined : sessions.get(targetId);
       if (!entry) {
-        return { content: [{ type: "text", text: `Unknown session "${session}"` }], isError: true };
+        return {
+          content: [{ type: "text", text: `No session "${targetId ?? "(none)"}" — run \`execute\` first.` }],
+          isError: true
+        };
       }
       const result = await entry.deref(ref, {
         ...(offset === undefined ? {} : { offset }),

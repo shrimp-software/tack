@@ -548,7 +548,7 @@ describe("MCP server", () => {
 
     try {
       const listed = await client.listTools();
-      expect(listed.tools.map((tool) => tool.name).sort()).toEqual(["deref", "execute", "session"]);
+      expect(listed.tools.map((tool) => tool.name).sort()).toEqual(["deref", "execute"]);
     } finally {
       await Promise.allSettled([client.close(), server.close()]);
     }
@@ -571,7 +571,7 @@ describe("MCP server", () => {
 
     try {
       const listed = await client.listTools();
-      expect(listed.tools.map((tool) => tool.name).sort()).toEqual(["deref", "execute", "session"]);
+      expect(listed.tools.map((tool) => tool.name).sort()).toEqual(["deref", "execute"]);
       const executeDescription = listed.tools.find((tool) => tool.name === "execute")?.description ?? "";
       expect(executeDescription).toContain("## Available namespaces");
       expect(executeDescription).toContain("Scope persists across `execute` calls");
@@ -629,19 +629,21 @@ describe("MCP server", () => {
 
     try {
       const listed = await client.listTools();
-      expect(listed.tools.find((tool) => tool.name === "execute")?.description)
-        .not.toContain("open a `session`");
+      expect(listed.tools.map((tool) => tool.name).sort()).toEqual(["deref", "execute"]);
 
-      const opened = await client.callTool({ name: "session", arguments: {} });
-      expect(opened.isError).toBe(true);
-      expect(extractText(opened.content)).toContain("persistent connection");
-
-      const executed = await client.callTool({
+      // No persistent session on this transport: an explicit `session` errors,
+      // and a bare `execute` runs one-shot.
+      const withSession = await client.callTool({
         name: "execute",
         arguments: { session: "s_made-up", code: "return 1;" }
       });
-      expect(executed.isError).toBe(true);
-      expect(extractText(executed.content)).toContain("persistent connection");
+      expect(withSession.isError).toBe(true);
+      expect(extractText(withSession.content)).toContain("persistent connection");
+
+      const oneShot = await client.callTool({ name: "execute", arguments: { code: "return 1 + 1;" } });
+      expect(oneShot.isError).toBeUndefined();
+      expect(oneShot.structuredContent).toMatchObject({ status: "completed", result: 2 });
+      expect(oneShot.structuredContent).not.toHaveProperty("session");
     } finally {
       await Promise.allSettled([client.close(), server.close()]);
     }
