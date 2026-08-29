@@ -2,6 +2,10 @@ import { z } from "zod";
 
 import type { TackManifestServer, TackServerConfig } from "./types.js";
 
+/** The `transport` discriminant shared by {@link TackServerConfig} and
+ *  {@link TackManifestServer}. */
+export type Transport = TackServerConfig["transport"];
+
 /** The manifest fields a source kind owns: every field on a manifest server
  *  except its `id` and its resolved tool list. */
 export type ManifestServerConnection = Omit<TackManifestServer, "id" | "tools">;
@@ -25,7 +29,7 @@ export type ManifestServerConnection = Omit<TackManifestServer, "id" | "tools">;
 export interface SourceKind<TConfig extends TackServerConfig = TackServerConfig> {
   /** The `transport` discriminant of the configs this kind owns. */
   readonly transport: TConfig["transport"];
-  /** Schema for one server config of this kind. Must pin `transport` to a literal. */
+  /** Schema for one server config of this kind. Pins `transport` to a literal. */
   readonly configSchema: z.ZodType<TConfig>;
   /**
    * Project a parsed config of this kind to its manifest connection fields, or
@@ -45,9 +49,9 @@ export interface SourceKind<TConfig extends TackServerConfig = TackServerConfig>
 const serverSchemaCache = new WeakMap<readonly SourceKind[], z.ZodType<TackServerConfig>>();
 
 /**
- * A union schema over every registered kind's `configSchema`, discriminated by
- * `transport`. Memoised per `kinds` array so repeated `parseConfig` calls with
- * the default registry don't rebuild it.
+ * A union schema over every registered kind's `configSchema`. Memoised per
+ * `kinds` array so repeated `parseConfig` calls with the default registry don't
+ * rebuild it.
  */
 export function buildServerConfigSchema(
   kinds: readonly SourceKind[]
@@ -57,21 +61,21 @@ export function buildServerConfigSchema(
     return cached;
   }
 
-  const options = kinds.map((kind) => kind.configSchema);
-  if (options.length === 0) {
+  const [first, ...rest] = kinds.map((kind) => kind.configSchema);
+  if (!first) {
     throw new Error("buildServerConfigSchema requires at least one SourceKind");
   }
 
   const schema: z.ZodType<TackServerConfig> =
-    options.length === 1 ? options[0]! : z.union(options);
+    rest.length === 0 ? first : z.union([first, ...rest]);
   serverSchemaCache.set(kinds, schema);
   return schema;
 }
 
-/** The kind that owns `config.transport`, or `undefined` when none is registered. */
+/** The kind that owns `transport`, or `undefined` when none is registered. */
 export function sourceKindFor(
   kinds: readonly SourceKind[],
-  transport: string
+  transport: Transport
 ): SourceKind | undefined {
   return kinds.find((kind) => kind.transport === transport);
 }
@@ -92,11 +96,9 @@ export function manifestConnectionFor(
  * kind. Returns the input `config` reference unchanged when nothing was
  * rewritten.
  */
-export function resolveConfigPaths<TConfig extends { readonly servers: Readonly<Record<string, TackServerConfig>> }>(
-  config: TConfig,
-  baseDir: string,
-  kinds: readonly SourceKind[]
-): TConfig {
+export function resolveConfigPaths<
+  TConfig extends { readonly servers: Readonly<Record<string, TackServerConfig>> }
+>(config: TConfig, baseDir: string, kinds: readonly SourceKind[]): TConfig {
   let changed = false;
   const servers = Object.create(null) as Record<string, TackServerConfig>;
 

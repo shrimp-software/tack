@@ -6,7 +6,8 @@ import {
   type TackManifest,
   type TackResult,
   type TackRuntime,
-  type TackTool
+  type TackTool,
+  type Transport
 } from "@tack/core";
 
 import { mcpSource } from "./sources/mcp.js";
@@ -20,7 +21,7 @@ const SOURCES: readonly Source[] = [mcpSource, moduleSource];
  *  config parsing and manifest projection. */
 export const SOURCE_KINDS: readonly SourceKind[] = SOURCES.flatMap((source) => source.kinds);
 
-const SOURCE_BY_TRANSPORT: ReadonlyMap<string, Source> = new Map(
+const SOURCE_BY_TRANSPORT: ReadonlyMap<Transport, Source> = new Map(
   SOURCES.flatMap((source) => sourceTransports(source).map((transport) => [transport, source] as const))
 );
 

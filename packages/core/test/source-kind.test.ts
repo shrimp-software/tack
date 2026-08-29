@@ -11,6 +11,7 @@ import {
   parseConfig,
   resolveConfigPaths,
   stdioSourceKind,
+  type ModuleServerConfig,
   type SourceKind,
   type TackConfig
 } from "../src/index.js";
@@ -114,53 +115,52 @@ describe("resolveConfigPaths", () => {
   });
 });
 
-describe("registering a new source kind", () => {
-  // A genuinely new transport still needs its arm on `TackServerConfig` in
-  // types.ts (TS unions are static) — this proves config parsing and manifest
-  // projection need no other core edit: just the SourceKind, threaded in.
-  const echoSchema = z.object({ transport: z.literal("echo"), phrase: z.string().min(1) });
-  const echoKind = {
-    transport: "echo",
-    configSchema: echoSchema,
-    connection: (config: z.infer<typeof echoSchema>) => ({
-      transport: "module" as const,
-      entry: config.phrase
-    })
-  } as unknown as SourceKind;
+describe("the registry drives parsing and projection", () => {
+  // config parsing, path anchoring, and manifest projection all run off the
+  // threaded `kinds` — not hardcoded transport branches. A fully typed custom
+  // kind swapped in for a built-in transport proves it, no casts required.
+  const loudModuleKind: SourceKind<ModuleServerConfig> = {
+    transport: "module",
+    configSchema: z.object({ transport: z.literal("module"), entry: z.string().min(1) }),
+    connection: (config) => ({ transport: "module", entry: config.entry.toUpperCase() }),
+    resolvePaths: (config) => config
+  };
 
-  const kinds: readonly SourceKind[] = [...BUILTIN_SOURCE_KINDS, echoKind];
+  const kinds: readonly SourceKind[] = [stdioSourceKind, httpSourceKind, loudModuleKind];
 
-  it("parses a config containing the new kind", () => {
+  it("projects a module server through the swapped-in kind", () => {
     const config = parseConfig(
-      { servers: { hi: { transport: "echo", phrase: "hello" } } },
-      kinds
-    );
-    expect(config.servers["hi"]).toEqual({ transport: "echo", phrase: "hello" });
-  });
-
-  it("rejects the new kind when its SourceKind is not threaded in", () => {
-    expect(() =>
-      parseConfig({ servers: { hi: { transport: "echo", phrase: "hello" } } })
-    ).toThrow();
-  });
-
-  it("projects the new kind into a manifest with no changes to buildManifest", () => {
-    const config = parseConfig(
-      { servers: { hi: { transport: "echo", phrase: "hello.ts" } } },
+      { servers: { local: { transport: "module", entry: "tools.ts" } } },
       kinds
     );
     const manifest = buildManifest(
       config,
-      [{ serverId: "hi", tools: [{ name: "greet" }] }],
+      [{ serverId: "local", tools: [{ name: "run" }] }],
       new Date("2026-07-23T00:00:00.000Z"),
       kinds
     );
 
-    expect(manifest.servers["hi"]).toMatchObject({
-      id: "hi",
+    expect(manifest.servers["local"]).toMatchObject({
+      id: "local",
       transport: "module",
-      entry: "hello.ts",
-      tools: ["hi.greet"]
+      entry: "TOOLS.TS",
+      tools: ["local.run"]
     });
+  });
+
+  it("falls back to BUILTIN_SOURCE_KINDS when none are threaded in", () => {
+    const config = parseConfig({
+      servers: { local: { transport: "module", entry: "tools.ts" } }
+    });
+    const manifest = buildManifest(config, [{ serverId: "local", tools: [{ name: "run" }] }]);
+
+    // built-in moduleSourceKind projects the entry verbatim
+    expect(manifest.servers["local"]).toMatchObject({ transport: "module", entry: "tools.ts" });
+  });
+
+  it("rejects a transport whose kind is not in the given registry", () => {
+    expect(() =>
+      parseConfig({ servers: { local: { transport: "module", entry: "tools.ts" } } }, [stdioSourceKind])
+    ).toThrow();
   });
 });

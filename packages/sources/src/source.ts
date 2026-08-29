@@ -4,7 +4,8 @@ import type {
   TackConfig,
   TackRuntime,
   TackServerConfig,
-  TackTool
+  TackTool,
+  Transport
 } from "@tack/core";
 
 /**
@@ -32,7 +33,7 @@ export interface Source {
 }
 
 /** The `transport` discriminants a source owns, derived from its {@link Source.kinds}. */
-export function sourceTransports(source: Source): readonly string[] {
+export function sourceTransports(source: Source): readonly Transport[] {
   return source.kinds.map((kind) => kind.transport);
 }
 

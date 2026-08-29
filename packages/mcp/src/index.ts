@@ -14,12 +14,19 @@ import {
   type TackResult,
   type TackRuntime,
   type TackServerConfig,
-  type TackTool
+  type TackTool,
+  type Transport
 } from "@tack/core";
 
 /** The source kinds this package can open an MCP connection to. */
 const MCP_SOURCE_KINDS = [stdioSourceKind, httpSourceKind];
-const MCP_TRANSPORTS: ReadonlySet<string> = new Set(MCP_SOURCE_KINDS.map((kind) => kind.transport));
+const MCP_TRANSPORTS = new Set<Transport>(MCP_SOURCE_KINDS.map((kind) => kind.transport));
+
+/** Whether `value` is a transport `@tack/mcp` can connect to (narrows unknown
+ *  manifest/config data at the boundary). */
+function isMcpTransport(value: unknown): value is Transport {
+  return typeof value === "string" && (MCP_TRANSPORTS as ReadonlySet<string>).has(value);
+}
 
 import {
   closeConnections,
@@ -167,8 +174,7 @@ function partitionManifestTools(manifest: TackManifest): {
     }
 
     const server = ownValue<TackManifest["servers"][string]>(servers, serverId);
-    const transport = ownValue<unknown>(server, "transport");
-    if (typeof transport === "string" && MCP_TRANSPORTS.has(transport)) {
+    if (isMcpTransport(ownValue<unknown>(server, "transport"))) {
       valid.push(rawTool as TackTool);
     }
   }
