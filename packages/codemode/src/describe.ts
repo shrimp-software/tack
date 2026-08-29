@@ -17,6 +17,8 @@ import { searchOperations } from "./search.js";
 
 export interface DescribeToolInput {
   readonly path: string;
+  /** Include `outputTypeScript` + the bundled `typeScriptDefinitions` blob. */
+  readonly types?: boolean | undefined;
 }
 
 export type DescribeToolResult = DescribedTool | ToolNotFoundDescription;
@@ -28,8 +30,10 @@ export interface DescribedTool {
   readonly inputSchema: JsonSchema;
   readonly outputSchema?: JsonSchema | undefined;
   readonly inputTypeScript: string;
-  readonly outputTypeScript: string;
-  readonly typeScriptDefinitions: string;
+  /** Only when the tool has an output schema, or `types: true` was passed. */
+  readonly outputTypeScript?: string | undefined;
+  /** Only when `types: true` was passed — input + output + a `ToolResult<T>` alias. */
+  readonly typeScriptDefinitions?: string | undefined;
   readonly examples: readonly string[];
   readonly injectedArgs?: Readonly<Record<string, string>> | undefined;
 }
@@ -48,7 +52,7 @@ export function normalizeDescribeToolInput(input: unknown): DescribeToolInput {
   if (typeof input === "object" && input !== null && !Array.isArray(input)) {
     const path = ownField<unknown>(input, "path");
     if (typeof path === "string") {
-      return { path };
+      return { path, ...(ownField<unknown>(input, "types") === true ? { types: true } : {}) };
     }
   }
 
@@ -68,9 +72,13 @@ export async function describeTool(
   const inputTypeName = typeName(operation, "Input");
   const outputTypeName = typeName(operation, "Output");
   const inputTypeScript = await compileSchema(operation.inputSchema, inputTypeName);
+  // Only compile an output type when there's a real schema, or the caller asked
+  // for the full type bundle. Otherwise it's just `export type X = unknown;`.
   const outputTypeScript = operation.outputSchema
     ? await compileSchema(operation.outputSchema, outputTypeName)
-    : `export type ${outputTypeName} = unknown;\n`;
+    : input.types
+      ? `export type ${outputTypeName} = unknown;\n`
+      : undefined;
 
   return {
     path: operation.fullPathString,
@@ -79,12 +87,16 @@ export async function describeTool(
     inputSchema: operation.inputSchema,
     ...(operation.outputSchema ? { outputSchema: operation.outputSchema } : {}),
     inputTypeScript,
-    outputTypeScript,
-    typeScriptDefinitions: [
-      inputTypeScript.trim(),
-      outputTypeScript.trim(),
-      `type ToolResult<T> = { ok: true; data: T; text: string; raw?: unknown } | { ok: false; error: { message: string }; text: string; raw?: unknown };`
-    ].join("\n\n"),
+    ...(outputTypeScript ? { outputTypeScript } : {}),
+    ...(input.types
+      ? {
+          typeScriptDefinitions: [
+            inputTypeScript.trim(),
+            (outputTypeScript ?? `export type ${outputTypeName} = unknown;`).trim(),
+            `type ToolResult<T> = { ok: true; data: T; text: string; raw?: unknown } | { ok: false; error: { message: string }; text: string; raw?: unknown };`
+          ].join("\n\n")
+        }
+      : {}),
     examples: operation.examples,
     ...(operation.injectedArgs ? { injectedArgs: operation.injectedArgs } : {})
   };

@@ -14,15 +14,13 @@ export interface SearchInput {
 }
 
 export interface SearchItem {
+  /** `namespace.path.to.op` — `namespace` and the leaf id are read off this. */
   readonly path: string;
-  readonly toolId: string;
-  readonly serverId: string;
-  readonly namespace: string;
   readonly description?: string | undefined;
   readonly example: string;
-  readonly examples: readonly string[];
-  readonly score: number;
-  readonly matchedTokens: readonly string[];
+  /** Present only on a keyword search — why this operation matched. */
+  readonly score?: number | undefined;
+  readonly matchedTokens?: readonly string[] | undefined;
 }
 
 export interface SearchResult {
@@ -142,14 +140,9 @@ function toSearchItem(
 ): SearchItem {
   return {
     path: operation.fullPathString,
-    toolId: operation.toolId,
-    serverId: operation.serverId,
-    namespace: operation.namespaceName,
     ...(operation.description ? { description: operation.description } : {}),
     example: operation.examples[0] ?? "",
-    examples: operation.examples,
-    score,
-    matchedTokens
+    ...(score > 0 ? { score, matchedTokens } : {})
   };
 }
 

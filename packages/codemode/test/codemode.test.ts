@@ -44,14 +44,12 @@ describe("codemode operation helpers", () => {
 
     expect(search.items[0]).toMatchObject({
       path: "grafana.alerting.rules.list",
-      namespace: "grafana",
-      serverId: "grafana",
       example: "await tools.grafana.alerting.rules.list()",
       score: expect.any(Number),
       matchedTokens: ["list", "rules"]
     });
     expect(search.items[0]).not.toHaveProperty("inputSchema");
-    expect(search.items[0]).not.toHaveProperty("outputSchema");
+    expect(search.items[0]).not.toHaveProperty("serverId");
 
     const described = await describeTool(manifest, {
       path: "grafana.alerting.rules.list"
@@ -85,15 +83,12 @@ describe("codemode operation helpers", () => {
     expect(listAll.items.map((item) => item.path)).toEqual(
       [...listAll.items.map((item) => item.path)].sort()
     );
-    expect(listAll.items[0]).toMatchObject({ path: "grafana.alerting.rules.get", score: 0, matchedTokens: [] });
+    expect(listAll.items[0]).toMatchObject({ path: "grafana.alerting.rules.get" });
+    expect(listAll.items[0]).not.toHaveProperty("score");
     const enumerated = searchOperations(manifest, { query: "", namespace: "grafana" });
     expect(enumerated.total).toBe(3);
-    expect(enumerated.items[0]).toMatchObject({
-      path: "grafana.alerting.rules.get",
-      namespace: "grafana",
-      score: 0,
-      matchedTokens: []
-    });
+    expect(enumerated.items[0]).toMatchObject({ path: "grafana.alerting.rules.get" });
+    expect(enumerated.items[0]).not.toHaveProperty("score");
     expect(searchOperations(manifest, { query: "datasources list" }).items.map((item) => item.path)).toEqual([
       "grafana.datasources.list"
     ]);
@@ -188,7 +183,7 @@ describe("codemode operation helpers", () => {
     expect(search).toMatchObject({
       items: [expect.objectContaining({
         path: "grafana.datasources.list",
-        namespace: "grafana"
+        score: expect.any(Number)
       })]
     });
 

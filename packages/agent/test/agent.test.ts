@@ -18,13 +18,11 @@ describe("agent search", () => {
 
     expect(result.items[0]).toMatchObject({
       path: "grafana.alerting.rules.get",
-      toolId: "grafana.alerting_manage_rules",
-      namespace: "grafana",
-      serverId: "grafana",
       score: expect.any(Number),
       matchedTokens: ["identifier", "unique"]
     });
     expect(result.items[0]).not.toHaveProperty("inputSchema");
+    expect(result.items[0]).not.toHaveProperty("toolId");
 
     const described = await describeTool(manifest, {
       path: result.items[0]?.path ?? ""
@@ -607,8 +605,7 @@ describe("MCP server", () => {
         result: {
           matches: {
             items: [expect.objectContaining({
-              path: "grafana.datasources.list",
-              namespace: "grafana"
+              path: "grafana.datasources.list"
             })]
           },
           datasources: {

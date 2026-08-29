@@ -35,9 +35,7 @@ describe("hosted MCP HTTP server", () => {
         status: "completed",
         result: {
           items: [expect.objectContaining({
-            path: "grafana.datasources.list",
-            namespace: "grafana",
-            toolId: "grafana.list_datasources"
+            path: "grafana.datasources.list"
           })]
         }
       });

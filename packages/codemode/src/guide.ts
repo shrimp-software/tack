@@ -61,7 +61,7 @@ export function renderExecuteGuide(
     "## Workflow",
     "",
     "1. `tools.search({ query: \"\" })` lists namespaces; `tools.search({ query: \"\", namespace })` lists that namespace's operations; `tools.search({ query })` keyword-searches across all of them.",
-    "2. Use `tools.describe.tool({ path })` to inspect the selected tool's input and output shapes.",
+    "2. Use `tools.describe.tool({ path })` for a tool's input schema (add `{ types: true }` for full TypeScript defs).",
     "3. Call operations with `tools.call(path, args)` or inferred methods like `tools.grafana.datasources.list(args)`.",
     "4. Use `emit(value)` for user-visible intermediate output and `return value` for the final result.",
     "",
