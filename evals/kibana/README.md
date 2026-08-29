@@ -1,6 +1,6 @@
 # Kibana Eval
 
-Local Kibana and Elasticsearch harness for comparing Tack against Executor on log-heavy MCP workflows.
+Local Kibana and Elasticsearch harness for running Tack evals on log-heavy MCP workflows.
 
 ```sh
 bun run eval:kibana:up
@@ -33,6 +33,6 @@ The eval runner explicitly passes Codex auth env vars such as `CODEX_HOME` and `
 
 ## Targets
 
-`tack-kibana` wraps Kibana MCP through Tack. `kibana-direct` exercises Kibana's HTTP MCP server directly. `executor-kibana` is a disabled placeholder until the local Executor command/profile is configured.
+`tack-kibana` wraps Kibana MCP through Tack. `kibana-direct` exercises Kibana's HTTP MCP server directly.
 
 Elastic documents the Agent Builder MCP endpoint as `{KIBANA_URL}/api/agent_builder/mcp`; custom spaces use `/s/{SPACE_NAME}/api/agent_builder/mcp`.

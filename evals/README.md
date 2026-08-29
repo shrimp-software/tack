@@ -1,13 +1,14 @@
 # Tack Evals
 
-Codex-backed evals for comparing Tack and Executor MCP behavior.
+Codex-backed evals that exercise the Tack MCP server on real agent tasks.
 
 ```sh
 cp evals/eval.config.example.json evals/eval.config.local.json
 bun run eval -- --config evals/eval.config.local.json
 ```
 
-The runner executes each case once per target with `codex exec --json`, injects exactly one MCP server for that target, and writes artifacts under `evals/runs/`.
+The runner executes each case once per target with `codex exec --json`, injects
+exactly one MCP server for that target, and writes artifacts under `evals/runs/`.
 
 ## What It Records
 
@@ -16,11 +17,11 @@ The runner executes each case once per target with `codex exec --json`, injects 
 - stderr
 - duration
 - Codex token usage when present
-- pairwise text similarity between target answers
 
 ## Config
 
-Targets are MCP server launch commands or Streamable HTTP URLs. Codex auth can be explicitly inherited:
+Each target is an MCP server launch command or a Streamable HTTP URL. Codex auth
+can be explicitly inherited:
 
 ```json
 {
@@ -32,25 +33,14 @@ Targets are MCP server launch commands or Streamable HTTP URLs. Codex auth can b
 
 Artifacts only store env var names, not values.
 
-Use local stdio binaries:
+Run Tack from source over stdio:
 
 ```json
 {
-  "id": "executor",
-  "mcpName": "executor",
-  "command": "executor",
-  "args": ["mcp"]
-}
-```
-
-Or wrap them in a container:
-
-```json
-{
-  "id": "executor-docker",
-  "mcpName": "executor",
-  "command": "docker",
-  "args": ["run", "--rm", "-i", "executor:local", "mcp"]
+  "id": "tack",
+  "mcpName": "tack",
+  "command": "bun",
+  "args": ["run", "--cwd", "packages/cli", "dev", "--", "mcp", "--config", "${TACK_CONFIG}"]
 }
 ```
 
@@ -65,6 +55,5 @@ Or point Codex at an HTTP MCP server:
 }
 ```
 
-Tack needs a real `tack.config.json` that points at Grafana MCP. Executor needs a local profile/integration that exposes Grafana.
-
+`tack.config.json` must point at a real upstream MCP server (e.g. Grafana MCP).
 Kibana-specific setup lives in `evals/kibana/`.

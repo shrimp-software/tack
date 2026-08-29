@@ -53,15 +53,6 @@
         "KIBANA_API_KEY"
       ],
       "enabled": false
-    },
-    {
-      "id": "executor-kibana",
-      "mcpName": "executor",
-      "command": "executor",
-      "args": [
-        "mcp"
-      ],
-      "enabled": false
     }
   ]
 }

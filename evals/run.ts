@@ -88,16 +88,6 @@ interface CaseRunSummary {
   readonly caseId: string;
   readonly createdAt: string;
   readonly targets: readonly TargetRunSummary[];
-  readonly comparisons: readonly PairwiseComparison[];
-}
-
-interface PairwiseComparison {
-  readonly left: string;
-  readonly right: string;
-  readonly wordJaccard: number;
-  readonly inputTokenDelta: number | null;
-  readonly outputTokenDelta: number | null;
-  readonly durationMsDelta: number;
 }
 
 const evalRoot = dirname(fileURLToPath(import.meta.url));
@@ -140,8 +130,7 @@ async function main(): Promise<void> {
       runId,
       caseId: evalCase.id,
       createdAt: new Date().toISOString(),
-      targets: targetRuns,
-      comparisons: compareTargets(targetRuns)
+      targets: targetRuns
     };
     await writeJson(resolve(caseOutDir, "summary.json"), summary);
     console.log(JSON.stringify(summary, null, 2));
@@ -408,54 +397,6 @@ function parseCodexJsonl(stdout: string): {
   }
 
   return { finalMessage, usage, eventCounts };
-}
-
-function compareTargets(targets: readonly TargetRunSummary[]): readonly PairwiseComparison[] {
-  const comparisons: PairwiseComparison[] = [];
-  for (let leftIndex = 0; leftIndex < targets.length; leftIndex += 1) {
-    for (let rightIndex = leftIndex + 1; rightIndex < targets.length; rightIndex += 1) {
-      const left = targets[leftIndex];
-      const right = targets[rightIndex];
-      if (!left || !right) {
-        continue;
-      }
-
-      comparisons.push({
-        left: left.targetId,
-        right: right.targetId,
-        wordJaccard: wordJaccard(left.finalMessage, right.finalMessage),
-        inputTokenDelta: tokenDelta(left.usage?.input_tokens, right.usage?.input_tokens),
-        outputTokenDelta: tokenDelta(left.usage?.output_tokens, right.usage?.output_tokens),
-        durationMsDelta: left.durationMs - right.durationMs
-      });
-    }
-  }
-  return comparisons;
-}
-
-function tokenDelta(left: number | undefined, right: number | undefined): number | null {
-  return typeof left === "number" && typeof right === "number" ? left - right : null;
-}
-
-function wordJaccard(left: string, right: string): number {
-  const leftWords = new Set(words(left));
-  const rightWords = new Set(words(right));
-  if (leftWords.size === 0 && rightWords.size === 0) {
-    return 1;
-  }
-
-  let intersection = 0;
-  for (const word of leftWords) {
-    if (rightWords.has(word)) {
-      intersection += 1;
-    }
-  }
-  const union = new Set([...leftWords, ...rightWords]).size;
-  return union === 0 ? 0 : Number((intersection / union).toFixed(4));
-}
-
-function words(value: string): readonly string[] {
-  return value.toLowerCase().match(/[a-z0-9_.-]+/gu) ?? [];
 }
 
 function parseFinalJson(value: string): unknown {

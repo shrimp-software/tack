@@ -44,13 +44,6 @@
         "GRAFANA_URL",
         "GRAFANA_SERVICE_ACCOUNT_TOKEN"
       ]
-    },
-    {
-      "id": "executor",
-      "mcpName": "executor",
-      "command": "executor",
-      "args": ["mcp"],
-      "enabled": false
     }
   ]
 }
