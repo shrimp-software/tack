@@ -32,6 +32,13 @@ export interface CreateTackAgentServerOptions {
   readonly codeRuntime: CodeRuntime;
   readonly policy?: OperationPolicy | undefined;
   readonly onAuditEvent?: ((event: ToolAuditEvent) => void | Promise<void>) | undefined;
+  /**
+   * Persistent code-mode sessions need one server instance per connection. Set
+   * `false` for stateless-per-request transports (the hosted HTTP handler does);
+   * the `session` tool then refuses instead of handing out unusable ids.
+   * Defaults to `true`.
+   */
+  readonly sessions?: boolean | undefined;
 }
 
 export function createTackAgentServer(
@@ -42,6 +49,7 @@ export function createTackAgentServer(
   const codeRuntime = readOwnData(options, "codeRuntime") as CodeRuntime;
   const policy = readOwnData(options, "policy") as OperationPolicy | undefined;
   const onAuditEvent = readOwnData(options, "onAuditEvent") as CreateTackAgentServerOptions["onAuditEvent"];
+  const sessionsAllowed = readOwnData(options, "sessions") !== false;
   const engineOptions: CreateExecutionEngineOptions = {
     manifest,
     runtime,
@@ -51,6 +59,7 @@ export function createTackAgentServer(
   };
   const engine = createExecutionEngine(engineOptions);
   const sessions = new SessionStore(engine);
+  const sessionsSupported = sessionsAllowed && engine.supportsSessions;
   const server = new McpServer(
     { name: "tack", version: "0.1.0" },
     { capabilities: { tools: {} } }
@@ -73,6 +82,9 @@ export function createTackAgentServer(
       const onTrace = progressTraceSink(ctx);
       try {
         if (session !== undefined) {
+          if (!sessionsSupported) {
+            return formatExecuteMcpResult(sessionError(SESSIONS_UNAVAILABLE));
+          }
           const entry = sessions.get(session);
           if (!entry) {
             return formatExecuteMcpResult(sessionError(`Unknown session "${session}"`));
@@ -109,9 +121,9 @@ export function createTackAgentServer(
         };
       }
 
-      if (!engine.supportsSessions) {
+      if (!sessionsSupported) {
         return {
-          content: [{ type: "text", text: "This server's runtime does not support sessions." }],
+          content: [{ type: "text", text: SESSIONS_UNAVAILABLE }],
           isError: true
         };
       }
@@ -137,6 +149,9 @@ export function createTackAgentServer(
       })
     },
     async ({ session, ref, offset, limit }) => {
+      if (!sessionsSupported) {
+        return { content: [{ type: "text", text: SESSIONS_UNAVAILABLE }], isError: true };
+      }
       const entry = sessions.get(session);
       if (!entry) {
         return { content: [{ type: "text", text: `Unknown session "${session}"` }], isError: true };
@@ -200,7 +215,10 @@ export function createTackAgentServer(
 }
 
 const SESSION_IDLE_MS = 5 * 60_000;
+const SESSION_MAX_LIFETIME_MS = 30 * 60_000;
 const MAX_SESSIONS = 8;
+const SESSIONS_UNAVAILABLE =
+  "Sessions need a persistent connection (stdio MCP) and a session-capable runtime. This endpoint does not provide one; use one-shot `execute` instead.";
 
 /** Connection-scoped store of live {@link ExecutionSession}s with idle expiry. */
 class SessionStore {
@@ -212,7 +230,7 @@ class SessionStore {
     if (this.entries.size >= MAX_SESSIONS) {
       throw new Error(`Too many open sessions (max ${MAX_SESSIONS})`);
     }
-    const session = await this.engine.createSession();
+    const session = await this.engine.createSession({ maxLifetimeMs: SESSION_MAX_LIFETIME_MS });
     this.entries.set(session.id, { session, timer: this.arm(session.id) });
     return session.id;
   }

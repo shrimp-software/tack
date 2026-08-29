@@ -128,5 +128,6 @@ A worked example lives at `packages/sources/examples/markdown-source.ts` (serve 
 - The generator refuses to overwrite non-generated `.ts` files.
 - MCP `execute` keeps a short dynamic description; call `guide({ name: "execute" })` for the full guide.
 - Code mode provides `tools.search`, `tools.describe.tool`, `tools.call`, inferred `tools.<path>` methods, and `emit`.
+- Persistent sessions (`session` tool, `execute({ session })`, `deref`) and result refs need one server instance per connection: they work over `tack mcp` (stdio) on the QuickJS runtime, not `tack host` (stateless HTTP) or workerd. Live tool-call trace streams over both as `notifications/progress`.
 - Evals live in `evals/`; Kibana setup lives in `evals/kibana/`.
 - `repos/` is read-only reference material and must not be imported.

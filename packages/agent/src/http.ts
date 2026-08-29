@@ -111,6 +111,9 @@ function createHostedMcpHandler(context: HostedMcpContext): ReturnType<typeof cr
       manifest: context.manifest,
       runtime: context.runtime,
       codeRuntime: context.codeRuntime,
+      // The handler builds a fresh instance per request, so a session store here
+      // could never outlive one call.
+      sessions: false,
       ...(policy ? { policy } : {}),
       ...(context.onAuditEvent ? { onAuditEvent: context.onAuditEvent } : {})
     });

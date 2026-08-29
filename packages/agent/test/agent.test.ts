@@ -628,6 +628,33 @@ describe("MCP server", () => {
     }
   });
 
+  it("refuses sessions when the transport cannot keep one instance per connection", async () => {
+    const server = createTackAgentServer({
+      manifest: grafanaManifest(),
+      runtime: fakeRuntime([]),
+      codeRuntime: createQuickJSRuntime({ timeoutMs: 5_000 }),
+      sessions: false
+    });
+    const client = new Client({ name: "tack-test", version: "0.1.0" });
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+    await Promise.all([server.connect(serverTransport), client.connect(clientTransport)]);
+
+    try {
+      const opened = await client.callTool({ name: "session", arguments: {} });
+      expect(opened.isError).toBe(true);
+      expect(extractText(opened.content)).toContain("persistent connection");
+
+      const executed = await client.callTool({
+        name: "execute",
+        arguments: { session: "s_made-up", code: "return 1;" }
+      });
+      expect(executed.isError).toBe(true);
+      expect(extractText(executed.content)).toContain("persistent connection");
+    } finally {
+      await Promise.allSettled([client.close(), server.close()]);
+    }
+  });
+
   it("trims execute code input before running it", async () => {
     let receivedCode = "";
     const codeRuntime: CodeRuntime = {
