@@ -420,7 +420,9 @@ describe("quickjs session", () => {
       });
       expect(big.ok).toBe(true);
       expect(big.result).toMatchObject({ __tackRef: "$1", type: expect.stringContaining("Array(500)") });
-      expect(Array.isArray((big.result as { preview: unknown }).preview)).toBe(true);
+      const preview = (big.result as { preview: unknown[] }).preview;
+      expect(Array.isArray(preview)).toBe(true);
+      expect(preview.length).toBeLessThanOrEqual(10);
 
       // the ref is usable as a bare identifier in the next cell
       const usesRef = await session.exec({
@@ -448,6 +450,29 @@ describe("quickjs session", () => {
         toolsPrelude: renderToolsPrelude()
       });
       expect(small).toMatchObject({ ok: true, result: { hi: true } });
+    } finally {
+      await session.close();
+    }
+  });
+
+  it("bounds the ref preview for a value wrapping a large nested array", async () => {
+    const runtime = createQuickJSRuntime({ timeoutMs: 5_000, maxInlineResultBytes: 200 });
+    const session = await runtime.createSession!();
+    try {
+      const wrapped = await session.exec({
+        code: "return { ok: true, data: Array.from({ length: 300 }, (_, i) => ({ i, blob: 'y'.repeat(400) })) };",
+        invoker: fakeInvoker([]),
+        toolsPrelude: renderToolsPrelude()
+      });
+      const result = wrapped.result as { __tackRef: string; type: string; preview: { data: unknown[] } };
+      expect(result.__tackRef).toBe("$1");
+      expect(result.type).toContain("data: Array(300)");
+      expect(result.preview.data.length).toBeLessThanOrEqual(10);
+      expect(JSON.stringify(result.preview).length).toBeLessThan(4_000);
+
+      // the full value is still intact behind the ref
+      const full = await session.deref!("$1", { limit: 1000 });
+      expect((full.value as { data: unknown[] }).data.length).toBe(300);
     } finally {
       await session.close();
     }

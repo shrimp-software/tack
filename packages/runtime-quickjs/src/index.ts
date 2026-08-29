@@ -262,18 +262,34 @@ globalThis.__tackRefHelpers = {
     }
     const t = typeof v;
     if (t === "string") return "string (" + v.length + " chars)";
-    if (t === "object") return "{ " + Object.keys(v).slice(0, 8).join(", ") + " }";
+    if (t === "object") {
+      const parts = Object.keys(v).slice(0, 8).map((k) => {
+        const value = v[k];
+        if (Array.isArray(value)) return k + ": Array(" + value.length + ")";
+        if (typeof value === "string" && value.length > 60) return k + ": string(" + value.length + ")";
+        return k;
+      });
+      return "{ " + parts.join(", ") + " }";
+    }
     return t;
   },
   preview(v, limit) {
-    if (Array.isArray(v)) return v.slice(0, limit);
-    if (v && typeof v === "object") {
-      const out = {};
-      for (const k of Object.keys(v).slice(0, limit)) out[k] = v[k];
-      return out;
-    }
-    if (typeof v === "string") return v.slice(0, limit * 40);
-    return v;
+    const shrink = (x, depth) => {
+      if (typeof x === "string") return x.length > 200 ? x.slice(0, 200) + "…" : x;
+      if (Array.isArray(x)) {
+        return depth < 0
+          ? "[Array(" + x.length + ")]"
+          : x.slice(0, limit).map((entry) => shrink(entry, depth - 1));
+      }
+      if (x && typeof x === "object") {
+        if (depth < 0) return "{" + Object.keys(x).slice(0, 8).join(",") + "}";
+        const out = {};
+        for (const k of Object.keys(x).slice(0, limit)) out[k] = shrink(x[k], depth - 1);
+        return out;
+      }
+      return x;
+    };
+    return shrink(v, 2);
   },
   slice(v, offset, limit) {
     if (Array.isArray(v) || typeof v === "string") {

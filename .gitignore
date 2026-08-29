@@ -9,6 +9,3 @@ coverage
 !.env.example
 .DS_Store
 .vscode/
-
-# Local design scratch (unused by the build). Remove this line to track it.
-/spec/
