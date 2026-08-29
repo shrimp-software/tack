@@ -2,9 +2,11 @@ import {
   TackRuntimeError,
   buildManifest,
   createTackResult,
+  httpSourceKind,
   ownDataEntries,
   ownDataRecord,
   ownDataValue as ownValue,
+  stdioSourceKind,
   type DiscoveredServer,
   type DiscoveredTool,
   type TackConfig,
@@ -14,6 +16,10 @@ import {
   type TackServerConfig,
   type TackTool
 } from "@tack/core";
+
+/** The source kinds this package can open an MCP connection to. */
+const MCP_SOURCE_KINDS = [stdioSourceKind, httpSourceKind];
+const MCP_TRANSPORTS: ReadonlySet<string> = new Set(MCP_SOURCE_KINDS.map((kind) => kind.transport));
 
 import {
   closeConnections,
@@ -37,12 +43,17 @@ export async function discoverMcpServers(
 }
 
 export async function discoverMcpManifestPromise(config: TackConfig): Promise<TackManifest> {
-  return buildManifest(config, await discoverMcpServers(mcpServerEntries(config)));
+  return buildManifest(
+    config,
+    await discoverMcpServers(mcpServerEntries(config)),
+    undefined,
+    MCP_SOURCE_KINDS
+  );
 }
 
 function mcpServerEntries(config: TackConfig): McpServerEntry[] {
   return ownDataEntries<TackServerConfig>(ownValue<TackConfig["servers"]>(config, "servers")).filter(
-    ([, serverConfig]) => serverConfig.transport === "stdio" || serverConfig.transport === "http"
+    ([, serverConfig]) => MCP_TRANSPORTS.has(serverConfig.transport)
   );
 }
 
@@ -157,7 +168,7 @@ function partitionManifestTools(manifest: TackManifest): {
 
     const server = ownValue<TackManifest["servers"][string]>(servers, serverId);
     const transport = ownValue<unknown>(server, "transport");
-    if (transport === "stdio" || transport === "http") {
+    if (typeof transport === "string" && MCP_TRANSPORTS.has(transport)) {
       valid.push(rawTool as TackTool);
     }
   }
