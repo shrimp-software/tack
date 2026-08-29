@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import {
-  ownDataValue as readOwnData,
+  ownField,
   type TackManifest,
   type TackRuntime
 } from "@tack/core";
@@ -57,12 +57,12 @@ export interface ExecutionEngine {
 export function createExecutionEngine(
   options: CreateExecutionEngineOptions
 ): ExecutionEngine {
-  const manifest = readOwnData(options, "manifest") as TackManifest;
-  const runtime = readOwnData(options, "runtime") as TackRuntime;
-  const codeRuntime = normalizeCodeRuntime(readOwnData(options, "codeRuntime") as CodeRuntime);
-  const policy = readOwnData(options, "policy") as OperationPolicy | undefined;
-  const onAuditEvent = readOwnData(options, "onAuditEvent") as CreateExecutionEngineOptions["onAuditEvent"];
-  const defaultOnTrace = readOwnData(options, "onTrace") as TraceSink | undefined;
+  const manifest = ownField(options, "manifest") as TackManifest;
+  const runtime = ownField(options, "runtime") as TackRuntime;
+  const codeRuntime = normalizeCodeRuntime(ownField(options, "codeRuntime") as CodeRuntime);
+  const policy = ownField(options, "policy") as OperationPolicy | undefined;
+  const onAuditEvent = ownField(options, "onAuditEvent") as CreateExecutionEngineOptions["onAuditEvent"];
+  const defaultOnTrace = ownField(options, "onTrace") as TraceSink | undefined;
 
   const runCell = async (
     run: (input: CodeRuntimeExecuteInput, signal?: AbortSignal) => Promise<ExecutionResult>,
@@ -124,11 +124,11 @@ export function createExecutionEngine(
 }
 
 function normalizeCodeRuntime(runtime: CodeRuntime): CodeRuntime {
-  const name = readOwnData(runtime, "name");
-  const isolation = readOwnData(runtime, "isolation");
-  const timeoutMs = readOwnData(runtime, "timeoutMs");
-  const execute = readOwnData(runtime, "execute");
-  const createSession = readOwnData(runtime, "createSession");
+  const name = ownField(runtime, "name");
+  const isolation = ownField(runtime, "isolation");
+  const timeoutMs = ownField(runtime, "timeoutMs");
+  const execute = ownField(runtime, "execute");
+  const createSession = ownField(runtime, "createSession");
   if (typeof execute !== "function") {
     throw new TypeError("Code runtime execute is required");
   }

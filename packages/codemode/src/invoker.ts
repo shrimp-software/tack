@@ -1,7 +1,7 @@
 import {
   findOperation,
   operationArgs,
-  ownDataValue as ownValue,
+  ownField,
   type TackManifest,
   type TackRuntime
 } from "@tack/core";
@@ -44,13 +44,9 @@ export function createTackToolInvoker(
   const context = normalizeToolInvokerContext(options);
   return {
     invoke: async (input) => {
-      const pathInput = typeof input === "object" && input !== null
-        ? ownValue<unknown>(input, "path")
-        : undefined;
+      const pathInput = ownField<unknown>(input, "path");
       const path = typeof pathInput === "string" ? pathInput : "";
-      const args = typeof input === "object" && input !== null
-        ? ownValue<unknown>(input, "args")
-        : undefined;
+      const args = ownField<unknown>(input, "args");
       if (path === "search") {
         return traceBuiltin(context, "search", () =>
           searchOperations(context.manifest, normalizeSearchInput(args), context.policy)
@@ -69,13 +65,13 @@ export function createTackToolInvoker(
 }
 
 function normalizeToolInvokerContext(options: CreateTackToolInvokerOptions): ToolInvokerContext {
-  const policy = ownValue<OperationPolicy>(options, "policy");
-  const executionId = ownValue<string>(options, "executionId");
-  const onTraceEvent = ownValue<CreateTackToolInvokerOptions["onTraceEvent"]>(options, "onTraceEvent");
-  const onAuditEvent = ownValue<CreateTackToolInvokerOptions["onAuditEvent"]>(options, "onAuditEvent");
+  const policy = ownField<OperationPolicy>(options, "policy");
+  const executionId = ownField<string>(options, "executionId");
+  const onTraceEvent = ownField<CreateTackToolInvokerOptions["onTraceEvent"]>(options, "onTraceEvent");
+  const onAuditEvent = ownField<CreateTackToolInvokerOptions["onAuditEvent"]>(options, "onAuditEvent");
   return {
-    manifest: ownValue<TackManifest>(options, "manifest") as TackManifest,
-    runtime: ownValue<TackRuntime>(options, "runtime") as TackRuntime,
+    manifest: ownField<TackManifest>(options, "manifest") as TackManifest,
+    runtime: ownField<TackRuntime>(options, "runtime") as TackRuntime,
     ...(policy ? { policy } : {}),
     ...(executionId ? { executionId } : {}),
     ...(onTraceEvent ? { onTraceEvent } : {}),

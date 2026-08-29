@@ -1,4 +1,4 @@
-import { ownDataValue as coreOwnDataValue } from "@tack/core";
+import { ownField } from "@tack/core";
 import type { ExecutionResult, ToolInvoker } from "./types.js";
 
 export interface NormalizedCodeRuntimeExecuteInput {
@@ -30,18 +30,18 @@ export interface RenderCodeModeUserFunctionSourceInput {
 }
 
 export function normalizeCodeRuntimeExecuteInput(input: unknown): NormalizeCodeRuntimeExecuteInputResult {
-  const code = readOwnData(input, "code");
+  const code = ownField(input, "code");
   if (typeof code !== "string") {
     return { ok: false, result: invalidInputResult("code is required") };
   }
 
-  const toolsPrelude = readOwnData(input, "toolsPrelude");
+  const toolsPrelude = ownField(input, "toolsPrelude");
   if (typeof toolsPrelude !== "string") {
     return { ok: false, result: invalidInputResult("toolsPrelude is required") };
   }
 
-  const invoker = readOwnData(input, "invoker");
-  const invoke = readOwnData(invoker, "invoke");
+  const invoker = ownField(input, "invoker");
+  const invoke = ownField(invoker, "invoke");
   if (typeof invoke !== "function") {
     return { ok: false, result: invalidInputResult("tool invoker is required") };
   }
@@ -116,12 +116,6 @@ function invalidInputResult(message: string): ExecutionResult {
       message
     }
   };
-}
-
-function readOwnData<T = unknown>(value: unknown, key: PropertyKey): T | undefined {
-  return typeof value === "object" && value !== null
-    ? coreOwnDataValue<T>(value, key)
-    : undefined;
 }
 
 export class CodeModeParseError extends Error {}

@@ -1,9 +1,9 @@
 import {
   assertLocalSchemaRefs,
-  cloneJsonData,
   findOperation,
-  ownDataValue as ownValue,
+  ownField,
   pruneEmptySchemaCompositionArrays,
+  sanitizeData,
   stripSchemaCompilerMetadata,
   stripTypeScriptSchemaExtensions,
   type JsonSchema,
@@ -46,7 +46,7 @@ export interface ToolNotFoundDescription {
 
 export function normalizeDescribeToolInput(input: unknown): DescribeToolInput {
   if (typeof input === "object" && input !== null && !Array.isArray(input)) {
-    const path = ownValue<unknown>(input, "path");
+    const path = ownField<unknown>(input, "path");
     if (typeof path === "string") {
       return { path };
     }
@@ -120,9 +120,7 @@ async function compileSchema(schema: JsonSchema, typeName: string): Promise<stri
 }
 
 function schemaForTypeScript(schema: JsonSchema): JsonSchema {
-  const next = cloneJsonData(schema, {
-    cycleMessage: "Cyclic JSON Schema data is not supported in described tool types"
-  }) as JsonSchema;
+  const next = sanitizeData(schema, {}) as JsonSchema;
   stripTypeScriptSchemaExtensions(next);
   stripSchemaCompilerMetadata(next);
   pruneEmptySchemaCompositionArrays(next);

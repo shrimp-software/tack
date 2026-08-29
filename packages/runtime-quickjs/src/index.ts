@@ -17,7 +17,7 @@ import {
   validateCodeModeUserCode,
   withTimeout
 } from "@tack/codemode";
-import { ownDataValue } from "@tack/core";
+import { ownField } from "@tack/core";
 import { transform } from "esbuild";
 import {
   newAsyncContext,
@@ -123,7 +123,7 @@ function readOwnNumber(
   options: QuickJSRuntimeOptions,
   key: keyof QuickJSRuntimeOptions
 ): number | undefined {
-  const value = ownDataValue(options, key);
+  const value = ownField(options, key);
   return typeof value === "number" ? value : undefined;
 }
 

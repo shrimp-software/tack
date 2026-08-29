@@ -1,8 +1,6 @@
 import {
   listOperations,
-  ownDataEntries,
-  ownDataValue as ownValue,
-  ownDataValues,
+  ownField,
   type TackManifest,
   type TackOperation
 } from "@tack/core";
@@ -39,14 +37,10 @@ export function searchOperations(
   input: SearchInput,
   policy?: OperationPolicy
 ): SearchResult {
-  const queryInput = ownValue<unknown>(input, "query");
-  const namespaceInput = ownValue<unknown>(input, "namespace");
-  const limitInput = ownValue<unknown>(input, "limit");
-  const offsetInput = ownValue<unknown>(input, "offset");
-  const query = normalizeSearchText(typeof queryInput === "string" ? queryInput : "");
-  const namespace = typeof namespaceInput === "string" ? normalizeSearchText(namespaceInput) : undefined;
-  const limit = clampInt(typeof limitInput === "number" ? limitInput : 12, 1, 50);
-  const offset = Math.max(0, Math.floor(typeof offsetInput === "number" ? offsetInput : 0));
+  const query = normalizeSearchText(typeof input.query === "string" ? input.query : "");
+  const namespace = typeof input.namespace === "string" ? normalizeSearchText(input.namespace) : undefined;
+  const limit = clampInt(typeof input.limit === "number" ? input.limit : 12, 1, 50);
+  const offset = Math.max(0, Math.floor(typeof input.offset === "number" ? input.offset : 0));
   const operations = filterAllowedOperations(listOperations(manifest), policy)
     .filter((operation) => !namespace || normalizeSearchText(operation.namespaceName) === namespace);
 
@@ -88,10 +82,10 @@ export function normalizeSearchInput(input: unknown): SearchInput {
   }
 
   if (typeof input === "object" && input !== null && !Array.isArray(input)) {
-    const query = ownValue<unknown>(input, "query");
-    const namespace = ownValue<unknown>(input, "namespace");
-    const limit = ownValue<unknown>(input, "limit");
-    const offset = ownValue<unknown>(input, "offset");
+    const query = ownField<unknown>(input, "query");
+    const namespace = ownField<unknown>(input, "namespace");
+    const limit = ownField<unknown>(input, "limit");
+    const offset = ownField<unknown>(input, "offset");
     return {
       query: typeof query === "string" ? query : "",
       ...(typeof namespace === "string" ? { namespace } : {}),
@@ -272,7 +266,7 @@ function collectSchemaTerms(
   seen.add(value);
 
   if (Array.isArray(value)) {
-    for (const item of ownDataValues<unknown>(value)) {
+    for (const item of value) {
       if (typeof item === "string" || typeof item === "number" || typeof item === "boolean") {
         terms.add(String(item));
       } else {
@@ -282,7 +276,7 @@ function collectSchemaTerms(
     return;
   }
 
-  for (const [key, item] of ownDataEntries<unknown>(value)) {
+  for (const [key, item] of Object.entries(value)) {
     if (key === "$schema") {
       continue;
     }

@@ -1,4 +1,4 @@
-import { ownDataValue } from "@tack/core";
+import { ownField } from "@tack/core";
 
 export interface WorkerdRuntimeOptions {
   readonly timeoutMs?: number;
@@ -50,7 +50,7 @@ function readOwnNumber(
   options: WorkerdRuntimeOptions,
   key: keyof WorkerdRuntimeOptions
 ): number | undefined {
-  const value = ownDataValue(options, key);
+  const value = ownField(options, key);
   return typeof value === "number" ? value : undefined;
 }
 
@@ -66,6 +66,6 @@ function optionalString<K extends keyof WorkerdRuntimeSettings>(
   options: WorkerdRuntimeOptions,
   key: K
 ): Pick<WorkerdRuntimeSettings, K> | Record<string, never> {
-  const value = ownDataValue(options, key);
+  const value = ownField(options, key);
   return typeof value === "string" ? { [key]: value } as Pick<WorkerdRuntimeSettings, K> : {};
 }
