@@ -77,6 +77,14 @@ function buildConfigSchema(kinds: readonly SourceKind[]): z.ZodType<TackConfig> 
       .object({
         dir: z.string().min(1).optional()
       })
+      .optional(),
+    delegate: z
+      .object({
+        model: z.string().min(1),
+        apiKeyEnv: z.string().min(1).optional(),
+        baseUrl: z.string().url().optional(),
+        replans: z.number().int().min(0).max(3).optional()
+      })
       .optional()
   }) satisfies z.ZodType<TackConfig>;
 

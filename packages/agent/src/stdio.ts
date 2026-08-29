@@ -7,6 +7,7 @@ import {
 import type { CodeRuntime, OperationPolicy, ToolAuditEvent } from "@tack/codemode";
 
 import { createTackAgentServer } from "./server.js";
+import type { DelegateOptions } from "./delegate.js";
 
 export interface ServeTackMcpStdioOptions {
   readonly manifest: TackManifest;
@@ -14,6 +15,7 @@ export interface ServeTackMcpStdioOptions {
   readonly codeRuntime: CodeRuntime;
   readonly policy?: OperationPolicy | undefined;
   readonly onAuditEvent?: ((event: ToolAuditEvent) => void | Promise<void>) | undefined;
+  readonly delegate?: DelegateOptions | undefined;
 }
 
 export function serveTackMcpStdio(
@@ -31,12 +33,14 @@ function normalizeServeOptions(
   const codeRuntime = ownField(options, "codeRuntime") as CodeRuntime;
   const policy = ownField(options, "policy") as OperationPolicy | undefined;
   const onAuditEvent = ownField(options, "onAuditEvent") as ServeTackMcpStdioOptions["onAuditEvent"];
+  const delegate = ownField(options, "delegate") as ServeTackMcpStdioOptions["delegate"];
 
   return {
     manifest,
     runtime,
     codeRuntime,
     ...(policy ? { policy } : {}),
-    ...(onAuditEvent ? { onAuditEvent } : {})
+    ...(onAuditEvent ? { onAuditEvent } : {}),
+    ...(delegate ? { delegate } : {})
   };
 }

@@ -27,6 +27,7 @@ import {
   type TraceSink
 } from "@tack/codemode";
 import type { ToolAuditEvent } from "@tack/codemode";
+import { buildDelegateSystemPrompt, runDelegate, type DelegateOptions } from "./delegate.js";
 
 export interface CreateTackAgentServerOptions {
   readonly manifest: TackManifest;
@@ -48,6 +49,12 @@ export interface CreateTackAgentServerOptions {
    * common case. Turn on for large multi-server catalogs.
    */
   readonly namespaceTools?: boolean | undefined;
+  /**
+   * Enable the `delegate` tool: one call that has an LLM turn a prose goal into a
+   * single code-mode program, runs it in the sandbox, and re-plans on failure.
+   * Omitted → the tool isn't registered. Provider credentials live in the planner.
+   */
+  readonly delegate?: DelegateOptions | undefined;
 }
 
 /** MCP tool-name grammar. Namespace slugs already conform; skip any that don't. */
@@ -238,6 +245,50 @@ export function createTackAgentServer(
         }
       );
     }
+  }
+
+  const delegate = ownField(options, "delegate") as DelegateOptions | undefined;
+  if (typeof delegate?.planner === "function") {
+    const delegateSystem = buildDelegateSystemPrompt(manifest, policy);
+    server.registerTool(
+      "delegate",
+      {
+        title: "Delegate a goal to a generated code-mode program",
+        description: [
+          "Give a goal in plain language. Tack has an LLM write one complete code-mode program",
+          "for it, runs it in the sandbox, and re-plans on failure. Returns the program, its",
+          "result, and status — use it for wide multi-step jobs you'd otherwise hand-script."
+        ].join("\n"),
+        inputSchema: z.object({
+          goal: z.string().trim().min(1).describe("What to accomplish, end to end, in plain language.")
+        })
+      },
+      async ({ goal }) => {
+        const outcome = await runDelegate({
+          planner: delegate.planner,
+          execute: (code) => engine.execute(code),
+          system: delegateSystem,
+          goal,
+          ...(delegate.replans !== undefined ? { replans: delegate.replans } : {})
+        });
+        const summary =
+          outcome.status === "completed"
+            ? valueText(outcome.result)
+            : `delegate failed after ${outcome.attempts} attempt(s): ` +
+              `${outcome.error?.phase ?? "error"}: ${outcome.error?.message ?? "unknown"}`;
+        return {
+          content: [{ type: "text", text: truncatePreview(summary, MAX_PREVIEW_CHARS, previewSuffix) }],
+          structuredContent: {
+            status: outcome.status,
+            attempts: outcome.attempts,
+            program: outcome.program,
+            ...(outcome.status === "completed" ? { result: outcome.result } : {}),
+            ...(outcome.error ? { error: outcome.error } : {})
+          },
+          ...(outcome.status === "failed" ? { isError: true } : {})
+        };
+      }
+    );
   }
 
   const previousOnClose = server.server.onclose;

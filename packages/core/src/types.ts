@@ -60,6 +60,12 @@ export interface TackConfig {
   readonly output?: {
     readonly dir?: string | undefined;
   } | undefined;
+  readonly delegate?: {
+    readonly model: string;
+    readonly apiKeyEnv?: string | undefined;
+    readonly baseUrl?: string | undefined;
+    readonly replans?: number | undefined;
+  } | undefined;
 }
 
 export interface RateLimitConfig {

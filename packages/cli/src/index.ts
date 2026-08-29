@@ -2,7 +2,12 @@
 import { appendFile, mkdir, readFile, stat } from "node:fs/promises";
 import { dirname } from "node:path";
 import { Command } from "commander";
-import { listenTackMcpHttp, serveTackMcpStdio } from "@tack/agent";
+import {
+  createAnthropicPlanner,
+  listenTackMcpHttp,
+  serveTackMcpStdio,
+  type DelegateOptions
+} from "@tack/agent";
 import {
   createExecutionEngine,
   formatTraceLine,
@@ -293,12 +298,14 @@ program
       const codeRuntime = createCodeRuntime(config);
       const policy = createOperationPolicy(config);
       const onAuditEvent = createAuditSink(config);
+      const delegate = createDelegateOptions(config);
       const handle = serveTackMcpStdio({
         manifest,
         runtime,
         codeRuntime,
         ...(policy ? { policy } : {}),
-        ...(onAuditEvent ? { onAuditEvent } : {})
+        ...(onAuditEvent ? { onAuditEvent } : {}),
+        ...(delegate ? { delegate } : {})
       });
 
       await waitForStdinClose();
@@ -434,6 +441,30 @@ function createOperationPolicy(config: TackConfig): OperationPolicy | undefined 
   return {
     ...(security.allowedOperations ? { allowedOperations: security.allowedOperations } : {}),
     ...(security.deniedOperations ? { deniedOperations: security.deniedOperations } : {})
+  };
+}
+
+function createDelegateOptions(config: TackConfig): DelegateOptions | undefined {
+  const delegate = config.delegate;
+  if (!delegate?.model) {
+    return undefined;
+  }
+  const apiKeyEnv = delegate.apiKeyEnv ?? "ANTHROPIC_API_KEY";
+  const apiKey = process.env[apiKeyEnv];
+  if (!apiKey) {
+    console.warn(
+      `[tack] delegate is configured (model ${delegate.model}) but ${apiKeyEnv} is not set; ` +
+        "the delegate tool will not be registered."
+    );
+    return undefined;
+  }
+  return {
+    planner: createAnthropicPlanner({
+      model: delegate.model,
+      apiKey,
+      ...(delegate.baseUrl ? { baseUrl: delegate.baseUrl } : {})
+    }),
+    ...(delegate.replans !== undefined ? { replans: delegate.replans } : {})
   };
 }
 
