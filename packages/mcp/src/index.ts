@@ -18,16 +18,6 @@ import {
   type Transport
 } from "@tack/core";
 
-/** The source kinds this package can open an MCP connection to. */
-const MCP_SOURCE_KINDS = [stdioSourceKind, httpSourceKind];
-const MCP_TRANSPORTS = new Set<Transport>(MCP_SOURCE_KINDS.map((kind) => kind.transport));
-
-/** Whether `value` is a transport `@tack/mcp` can connect to (narrows unknown
- *  manifest/config data at the boundary). */
-function isMcpTransport(value: unknown): value is Transport {
-  return typeof value === "string" && (MCP_TRANSPORTS as ReadonlySet<string>).has(value);
-}
-
 import {
   closeConnections,
   getConnection,
@@ -38,6 +28,15 @@ import {
 } from "./client.js";
 
 type McpServerEntry = readonly [string, TackServerConfig];
+
+/** The source kinds this package can open an MCP connection to. */
+const MCP_SOURCE_KINDS = [stdioSourceKind, httpSourceKind];
+
+/** Whether `value` is a transport this package can open an MCP connection to
+ *  (narrows unknown manifest / config data at the boundary). */
+function isMcpTransport(value: unknown): value is Transport {
+  return MCP_SOURCE_KINDS.some((kind) => kind.transport === value);
+}
 
 /**
  * Discover the given MCP server configs. Entries are expected to be pre-filtered
@@ -60,7 +59,7 @@ export async function discoverMcpManifestPromise(config: TackConfig): Promise<Ta
 
 function mcpServerEntries(config: TackConfig): McpServerEntry[] {
   return ownDataEntries<TackServerConfig>(ownValue<TackConfig["servers"]>(config, "servers")).filter(
-    ([, serverConfig]) => MCP_TRANSPORTS.has(serverConfig.transport)
+    ([, serverConfig]) => isMcpTransport(serverConfig.transport)
   );
 }
 
