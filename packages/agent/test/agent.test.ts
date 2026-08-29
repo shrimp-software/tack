@@ -548,13 +548,13 @@ describe("MCP server", () => {
 
     try {
       const listed = await client.listTools();
-      expect(listed.tools.map((tool) => tool.name).sort()).toEqual(["deref", "execute"]);
+      expect(listed.tools.map((tool) => tool.name).sort()).toEqual(["deref", "execute", "guide"]);
     } finally {
       await Promise.allSettled([client.close(), server.close()]);
     }
   });
 
-  it("exposes a self-sufficient execute tool with no separate guide", async () => {
+  it("keeps the execute description lean and the how-to behind the guide tool", async () => {
     const calls: Array<{ toolId: string; args: unknown }> = [];
     const server = createTackAgentServer({
       manifest: grafanaManifest(),
@@ -571,13 +571,17 @@ describe("MCP server", () => {
 
     try {
       const listed = await client.listTools();
-      expect(listed.tools.map((tool) => tool.name).sort()).toEqual(["deref", "execute"]);
+      expect(listed.tools.map((tool) => tool.name).sort()).toEqual(["deref", "execute", "guide"]);
       const executeDescription = listed.tools.find((tool) => tool.name === "execute")?.description ?? "";
       expect(executeDescription).toContain("## Available namespaces");
-      expect(executeDescription).toContain("Scope persists across `execute` calls");
-      expect(executeDescription).toContain("tools.describe.tool({ path })");
-      expect(executeDescription).toContain("ToolFile");
-      expect(executeDescription).not.toContain("guide(");
+      expect(executeDescription).toContain('guide({ name: "execute" })');
+      // the long-form how-to is NOT in the always-loaded description
+      expect(executeDescription).not.toContain("## Workflow");
+      expect(executeDescription).not.toContain("## Rules");
+
+      const guide = await client.callTool({ name: "guide", arguments: { name: "execute" } });
+      expect(extractText(guide.content)).toContain("## Workflow");
+      expect(extractText(guide.content)).toContain("__tackRef");
 
       await expect(client.callTool({
         name: "search",
@@ -610,7 +614,37 @@ describe("MCP server", () => {
       });
       expect(calls).toEqual([{ toolId: "grafana.list_datasources", args: {} }]);
 
-      await expect(client.callTool({ name: "guide", arguments: {} })).rejects.toThrow();
+      // a bare `guide()` returns the index of available guides
+      const index = await client.callTool({ name: "guide", arguments: {} });
+      expect(extractText(index.content)).toContain("`execute`");
+    } finally {
+      await Promise.allSettled([client.close(), server.close()]);
+    }
+  });
+
+  it("registers one opt-in search_<namespace> tool per namespace when asked", async () => {
+    const server = createTackAgentServer({
+      manifest: grafanaManifest(),
+      runtime: fakeRuntime([]),
+      codeRuntime: createQuickJSRuntime({ timeoutMs: 5_000 }),
+      namespaceTools: true
+    });
+    const client = new Client({ name: "tack-test", version: "0.1.0" });
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+    await Promise.all([server.connect(serverTransport), client.connect(clientTransport)]);
+
+    try {
+      const listed = await client.listTools();
+      expect(listed.tools.map((tool) => tool.name).sort()).toEqual([
+        "deref",
+        "execute",
+        "guide",
+        "search_grafana"
+      ]);
+
+      const found = await client.callTool({ name: "search_grafana", arguments: {} });
+      expect((found.structuredContent as { items: Array<{ path: string }> }).items.map((item) => item.path))
+        .toContain("grafana.datasources.list");
     } finally {
       await Promise.allSettled([client.close(), server.close()]);
     }
@@ -629,7 +663,7 @@ describe("MCP server", () => {
 
     try {
       const listed = await client.listTools();
-      expect(listed.tools.map((tool) => tool.name).sort()).toEqual(["deref", "execute"]);
+      expect(listed.tools.map((tool) => tool.name).sort()).toEqual(["deref", "execute", "guide"]);
 
       // No persistent session on this transport: an explicit `session` errors,
       // and a bare `execute` runs one-shot.

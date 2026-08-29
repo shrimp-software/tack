@@ -67,7 +67,7 @@ describe("module source over MCP (e2e)", () => {
     const agent = await connectAgent();
     try {
       const { tools } = await agent.client.listTools();
-      expect(tools.map((tool) => tool.name).sort()).toEqual(["deref", "execute"]);
+      expect(tools.map((tool) => tool.name).sort()).toEqual(["deref", "execute", "guide"]);
     } finally {
       await agent.close();
     }

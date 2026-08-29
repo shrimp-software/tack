@@ -6,6 +6,7 @@ import {
   createExecuteDescription,
   createTackToolInvoker,
   describeTool,
+  findGuide,
   formatTraceLine,
   isOperationAllowed,
   isTackRef,
@@ -18,18 +19,23 @@ import {
 import { buildManifest, listOperations, type TackManifest } from "@tack/core";
 
 describe("codemode operation helpers", () => {
-  it("renders a self-sufficient execute description from the manifest", () => {
+  it("keeps the execute description lean, with the how-to behind findGuide", () => {
     const description = createExecuteDescription(grafanaManifest());
 
-    expect(description).toContain("Run TypeScript in Tack's sandboxed runtime.");
     expect(description).toContain("Scope persists across `execute` calls");
-    expect(description).toContain("tools.search({ namespace })");
-    expect(description).toContain("tools.describe.tool({ path })");
-    expect(description).toContain("__tackRef");
-    expect(description).toContain("ToolFile");
-    expect(description).toContain("truncate at 30000 chars");
+    expect(description).toContain('guide({ name: "execute" })');
     expect(description).toContain("## Available namespaces");
     expect(description).toContain("- `grafana`");
+    // the long-form how-to is not paid for on every session
+    expect(description).not.toContain("## Workflow");
+    expect(description).not.toContain("ToolFile");
+
+    const guide = findGuide("execute", grafanaManifest());
+    expect(guide?.body).toContain("## Workflow");
+    expect(guide?.body).toContain("__tackRef");
+    expect(guide?.body).toContain("ToolFile");
+    expect(guide?.body).toContain("## Available namespaces");
+    expect(findGuide("nope", grafanaManifest())).toBeUndefined();
   });
 
   it("searches and describes inferred operations from the shared graph", async () => {

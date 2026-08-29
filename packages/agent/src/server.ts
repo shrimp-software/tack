@@ -12,9 +12,13 @@ import {
   type TackRuntime
 } from "@tack/core";
 import {
+  availableNamespaces,
   createExecutionEngine,
+  findGuide,
   formatTraceLine,
   isTackRef,
+  renderGuideIndex,
+  searchOperations,
   type CodeRuntime,
   type CreateExecutionEngineOptions,
   type ExecutionResult,
@@ -37,7 +41,17 @@ export interface CreateTackAgentServerOptions {
    * Defaults to `true`.
    */
   readonly sessions?: boolean | undefined;
+  /**
+   * Register one tiny `search_<namespace>` tool per connected namespace, so the
+   * model sees the namespace list as tool names in `tools/list` without a prose
+   * blob. Off by default — the `execute` description's inventory covers the
+   * common case. Turn on for large multi-server catalogs.
+   */
+  readonly namespaceTools?: boolean | undefined;
 }
+
+/** MCP tool-name grammar. Namespace slugs already conform; skip any that don't. */
+const NAMESPACE_TOOL_SLUG = /^[A-Za-z0-9_-]+$/;
 
 export function createTackAgentServer(
   options: CreateTackAgentServerOptions
@@ -171,6 +185,60 @@ export function createTackAgentServer(
       };
     }
   );
+
+  server.registerTool(
+    "guide",
+    {
+      title: "Fetch a Tack how-to guide",
+      description: [
+        "On-demand how-to docs for this server's own tools — the long-form guidance kept out of",
+        "the always-loaded `execute` description.",
+        'Call `guide({ name: "execute" })` for the guide to writing code for `execute`. Omit `name` to list guides.'
+      ].join("\n"),
+      inputSchema: z.object({
+        name: z.string().optional().describe('Guide to fetch, e.g. "execute". Omit to list.')
+      })
+    },
+    async ({ name }) => {
+      const trimmed = name?.trim();
+      if (!trimmed) {
+        return { content: [{ type: "text", text: renderGuideIndex() }] };
+      }
+      const guide = findGuide(trimmed, manifest, policy);
+      return guide
+        ? { content: [{ type: "text", text: guide.body }] }
+        : {
+            content: [{ type: "text", text: `No guide named "${trimmed}".\n\n${renderGuideIndex()}` }],
+            isError: true
+          };
+    }
+  );
+
+  if (ownField(options, "namespaceTools") === true) {
+    for (const namespace of availableNamespaces(manifest, policy)) {
+      if (!NAMESPACE_TOOL_SLUG.test(namespace)) {
+        continue;
+      }
+      server.registerTool(
+        `search_${namespace}`,
+        {
+          description: "List this namespace's operations (empty query) or search within it. Run results with `execute`.",
+          inputSchema: z.object({ query: z.string().optional() })
+        },
+        async ({ query }) => {
+          const result = searchOperations(
+            manifest,
+            { query: query ?? "", namespace },
+            policy
+          );
+          return {
+            content: [{ type: "text", text: valueText(result) }],
+            structuredContent: result
+          };
+        }
+      );
+    }
+  }
 
   const previousOnClose = server.server.onclose;
   server.server.onclose = () => {
