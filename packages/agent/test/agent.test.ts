@@ -548,13 +548,13 @@ describe("MCP server", () => {
 
     try {
       const listed = await client.listTools();
-      expect(listed.tools.map((tool) => tool.name).sort()).toEqual(["deref", "execute", "guide", "session"]);
+      expect(listed.tools.map((tool) => tool.name).sort()).toEqual(["deref", "execute", "session"]);
     } finally {
       await Promise.allSettled([client.close(), server.close()]);
     }
   });
 
-  it("exposes execute and guide as the model-facing tools", async () => {
+  it("exposes a self-sufficient execute tool with no separate guide", async () => {
     const calls: Array<{ toolId: string; args: unknown }> = [];
     const server = createTackAgentServer({
       manifest: grafanaManifest(),
@@ -571,15 +571,13 @@ describe("MCP server", () => {
 
     try {
       const listed = await client.listTools();
-      expect(listed.tools.map((tool) => tool.name).sort()).toEqual(["deref", "execute", "guide", "session"]);
-      expect(listed.tools.find((tool) => tool.name === "execute")?.description)
-        .toContain("## Available namespaces");
-      expect(listed.tools.find((tool) => tool.name === "execute")?.description)
-        .toContain("Scope persists across `execute` calls");
-      expect(listed.tools.find((tool) => tool.name === "execute")?.description)
-        .toContain('guide({ name: "execute" })');
-      expect(listed.tools.find((tool) => tool.name === "execute")?.description)
-        .not.toContain("## Workflow");
+      expect(listed.tools.map((tool) => tool.name).sort()).toEqual(["deref", "execute", "session"]);
+      const executeDescription = listed.tools.find((tool) => tool.name === "execute")?.description ?? "";
+      expect(executeDescription).toContain("## Available namespaces");
+      expect(executeDescription).toContain("Scope persists across `execute` calls");
+      expect(executeDescription).toContain("tools.describe.tool({ path })");
+      expect(executeDescription).toContain("ToolFile");
+      expect(executeDescription).not.toContain("guide(");
 
       await expect(client.callTool({
         name: "search",
@@ -612,12 +610,7 @@ describe("MCP server", () => {
       });
       expect(calls).toEqual([{ toolId: "grafana.list_datasources", args: {} }]);
 
-      const executeGuide = await client.callTool({
-        name: "guide",
-        arguments: { name: "execute" }
-      });
-      expect(extractText(executeGuide.content)).toContain("## Workflow");
-      expect(executeGuide.structuredContent).toBeUndefined();
+      await expect(client.callTool({ name: "guide", arguments: {} })).rejects.toThrow();
     } finally {
       await Promise.allSettled([client.close(), server.close()]);
     }

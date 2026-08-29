@@ -67,7 +67,7 @@ describe("module source over MCP (e2e)", () => {
     const agent = await connectAgent();
     try {
       const { tools } = await agent.client.listTools();
-      expect(tools.map((tool) => tool.name).sort()).toEqual(["deref", "execute", "guide", "session"]);
+      expect(tools.map((tool) => tool.name).sort()).toEqual(["deref", "execute", "session"]);
     } finally {
       await agent.close();
     }
@@ -110,22 +110,13 @@ describe("module source over MCP (e2e)", () => {
     }
   });
 
-  it("advertises the docs namespace in the execute description and the guide", async () => {
+  it("advertises the docs namespace in the execute description", async () => {
     const agent = await connectAgent();
     try {
       const { tools } = await agent.client.listTools();
       const execute = tools.find((tool) => tool.name === "execute");
       expect(execute?.description).toContain("## Available namespaces");
       expect(execute?.description).toContain("- `docs`");
-
-      const guide = await agent.client.callTool({
-        name: "guide",
-        arguments: { name: "execute" }
-      });
-      const guideText = extractText(guide.content);
-      expect(guideText).toContain("# execute");
-      expect(guideText).toContain("## Available namespaces");
-      expect(guideText).toContain("- `docs`");
     } finally {
       await agent.close();
     }

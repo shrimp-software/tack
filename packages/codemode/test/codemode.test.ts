@@ -6,7 +6,6 @@ import {
   createExecuteDescription,
   createTackToolInvoker,
   describeTool,
-  findGuide,
   formatTraceLine,
   isOperationAllowed,
   isTackRef,
@@ -19,23 +18,18 @@ import {
 import { buildManifest, listOperations, type TackManifest } from "@tack/core";
 
 describe("codemode operation helpers", () => {
-  it("renders short execute descriptions and long execute guide docs from the manifest", () => {
-    const manifest = grafanaManifest();
-    const description = createExecuteDescription(manifest);
+  it("renders a self-sufficient execute description from the manifest", () => {
+    const description = createExecuteDescription(grafanaManifest());
 
     expect(description).toContain("Run TypeScript in Tack's sandboxed runtime.");
-    expect(description).toContain('guide({ name: "execute" })');
+    expect(description).toContain("Scope persists across `execute` calls");
+    expect(description).toContain("tools.search({ query: \"\" })");
+    expect(description).toContain("tools.describe.tool({ path })");
+    expect(description).toContain("__tackRef");
+    expect(description).toContain("ToolFile");
+    expect(description).toContain("truncate at 30000 chars");
     expect(description).toContain("## Available namespaces");
     expect(description).toContain("- `grafana`");
-    expect(description).not.toContain("## Workflow");
-
-    const guide = findGuide("execute", manifest);
-    expect(guide?.body).toContain("## Workflow");
-    expect(guide?.body).toContain("tools.describe.tool");
-    expect(guide?.body).toContain("ToolFile shape");
-    expect(guide?.body).toContain("emitted text files are truncated at 64000 chars");
-    expect(guide?.body).toContain("- `grafana`");
-    expect(findGuide("missing", manifest)).toBeUndefined();
   });
 
   it("searches and describes inferred operations from the shared graph", async () => {

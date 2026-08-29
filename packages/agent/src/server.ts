@@ -13,10 +13,8 @@ import {
 } from "@tack/core";
 import {
   createExecutionEngine,
-  findGuide,
   formatTraceLine,
   isTackRef,
-  renderGuideIndex,
   type CodeRuntime,
   type CreateExecutionEngineOptions,
   type ExecutionResult,
@@ -203,41 +201,6 @@ export function createTackAgentServer(
       return {
         content: [{ type: "text", text: valueText(result.value) }],
         structuredContent: { value: result.value, truncated: result.truncated ?? false }
-      };
-    }
-  );
-
-  server.registerTool(
-    "guide",
-    {
-      title: "Fetch Tack guide",
-      description: [
-        "Fetch a named how-to guide. Guides hold long-form guidance that would otherwise bloat another tool's always-loaded description.",
-        'Call `guide({ name: "execute" })` for the full guide to writing code for the execute tool.',
-        "Call with no name to list available guides."
-      ].join("\n"),
-      inputSchema: z.object({
-        name: z.string().optional().describe('The guide to fetch, e.g. "execute". Omit to list available guides.')
-      })
-    },
-    async ({ name }) => {
-      const trimmed = name?.trim();
-      if (!trimmed) {
-        return {
-          content: [{ type: "text", text: renderGuideIndex() }]
-        };
-      }
-
-      const guide = findGuide(trimmed, manifest, policy);
-      if (!guide) {
-        return {
-          content: [{ type: "text", text: `No guide named "${trimmed}".\n\n${renderGuideIndex()}` }],
-          isError: true
-        };
-      }
-
-      return {
-        content: [{ type: "text", text: guide.body }]
       };
     }
   );
