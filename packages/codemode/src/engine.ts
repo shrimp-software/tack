@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import {
+  listOperations,
   ownField,
   type TackManifest,
   type TackRuntime
@@ -7,6 +8,7 @@ import {
 
 import { createTackToolInvoker } from "./invoker.js";
 import { createExecuteDescription } from "./guide.js";
+import { filterAllowedOperations } from "./policy.js";
 import type { OperationPolicy } from "./policy.js";
 import { renderToolsPrelude } from "./tools.js";
 import type {
@@ -64,6 +66,10 @@ export function createExecutionEngine(
   const onAuditEvent = ownField(options, "onAuditEvent") as CreateExecutionEngineOptions["onAuditEvent"];
   const defaultOnTrace = ownField(options, "onTrace") as TraceSink | undefined;
 
+  const toolsPrelude = renderToolsPrelude(
+    filterAllowedOperations(listOperations(manifest), policy).map((operation) => operation.fullPathString)
+  );
+
   const runCell = async (
     run: (input: CodeRuntimeExecuteInput, signal?: AbortSignal) => Promise<ExecutionResult>,
     code: string,
@@ -89,7 +95,7 @@ export function createExecutionEngine(
     });
 
     const result = await run(
-      { code, invoker, toolsPrelude: renderToolsPrelude() },
+      { code, invoker, toolsPrelude },
       cellOptions?.signal
     );
     return {

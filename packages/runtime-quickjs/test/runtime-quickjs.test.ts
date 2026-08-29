@@ -111,6 +111,29 @@ return output;
     ]);
   });
 
+  it("lets user code navigate the tools proxy structurally", async () => {
+    const result = await createQuickJSRuntime({ timeoutMs: 5_000 }).execute({
+      invoker: fakeInvoker([]),
+      toolsPrelude: renderToolsPrelude(["gh.list", "gh.get", "gh.label.add", "docs.read"]),
+      code: `return {
+        namespaces: Object.keys(tools).sort(),
+        gh: Object.keys(tools.gh).sort(),
+        hasAdd: "add" in tools.gh.label,
+        callable: typeof tools.gh.list
+      };`
+    });
+
+    expect(result).toMatchObject({
+      ok: true,
+      result: {
+        namespaces: ["docs", "gh"],
+        gh: ["get", "label", "list"],
+        hasAdd: true,
+        callable: "function"
+      }
+    });
+  });
+
   it("blocks direct fetch from user code", async () => {
     const result = await createQuickJSRuntime({ timeoutMs: 5_000 }).execute({
       invoker: fakeInvoker([]),
