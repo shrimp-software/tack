@@ -454,23 +454,19 @@ describe("MCP server", () => {
       });
 
       const text = extractText(executed.content);
+      // In the connection's auto-session a large result is retained as a ref
+      // with a preview, not inlined-and-truncated — concise, and nothing lost.
       expect(text.length).toBeLessThan(31_000);
-      expect(text).toContain("[truncated ");
+      expect(text).toContain("`$1`");
+      expect(text).toContain("retained");
       expect(text).toContain("Production datasource 0");
       expect(text).not.toContain('"executionId"');
       expect(text).not.toContain('"trace"');
       expect(executed.isError).toBeUndefined();
       expect(executed.structuredContent).toMatchObject({
         status: "completed",
-        result: {
-          ok: true,
-          data: {
-            datasources: expect.arrayContaining([
-              expect.objectContaining({ uid: "datasource-999" })
-            ])
-          }
-        },
-        logs: []
+        session: expect.stringMatching(/^s_/),
+        result: { __tackRef: "$1", type: expect.any(String), preview: expect.anything() }
       });
       expect(executed.structuredContent).not.toHaveProperty("executionId");
       expect(executed.structuredContent).not.toHaveProperty("trace");
@@ -579,7 +575,7 @@ describe("MCP server", () => {
       expect(listed.tools.find((tool) => tool.name === "execute")?.description)
         .toContain("## Available namespaces");
       expect(listed.tools.find((tool) => tool.name === "execute")?.description)
-        .toContain("open a `session`");
+        .toContain("Scope persists across `execute` calls");
       expect(listed.tools.find((tool) => tool.name === "execute")?.description)
         .toContain('guide({ name: "execute" })');
       expect(listed.tools.find((tool) => tool.name === "execute")?.description)

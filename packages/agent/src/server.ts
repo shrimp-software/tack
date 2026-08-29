@@ -65,8 +65,30 @@ export function createTackAgentServer(
     { capabilities: { tools: {} } }
   );
 
+  // The connection's implicit session: a bare `execute` runs in it so scope
+  // carries across calls with no `session` ceremony. Recreated if it expired.
+  let defaultSessionId: string | undefined;
+  const defaultSession = async (fresh: boolean): Promise<ExecutionSession | undefined> => {
+    if (fresh && defaultSessionId !== undefined) {
+      await sessions.close(defaultSessionId);
+      defaultSessionId = undefined;
+    }
+    if (defaultSessionId !== undefined) {
+      const existing = sessions.get(defaultSessionId);
+      if (existing) {
+        return existing;
+      }
+    }
+    try {
+      defaultSessionId = await sessions.open();
+    } catch {
+      return undefined;
+    }
+    return sessions.get(defaultSessionId);
+  };
+
   const executeDescription = sessionsSupported
-    ? `${engine.getDescription()}\n\nMulti-step work: open a \`session\` and pass its id here so scope carries across calls.`
+    ? `${engine.getDescription()}\n\nScope persists across \`execute\` calls automatically — fetch once, refine over several cells. Pass \`fresh: true\` to start a clean scope. The \`session\` id is returned with each result for \`deref\`.`
     : engine.getDescription();
 
   server.registerTool(
@@ -79,11 +101,16 @@ export function createTackAgentServer(
         session: z
           .string()
           .optional()
-          .describe("Run this cell in a persistent session (from the `session` tool). Scope carries across cells.")
+          .describe("Run in a specific session id. Omit to use this connection's persistent session."),
+        fresh: z
+          .boolean()
+          .optional()
+          .describe("Start the connection's persistent session from a clean scope.")
       })
     },
-    async ({ code, session }, ctx) => {
+    async ({ code, session, fresh }, ctx) => {
       const onTrace = progressTraceSink(ctx);
+      const execOptions = onTrace ? { onTrace } : undefined;
       try {
         if (session !== undefined) {
           if (!sessionsSupported) {
@@ -93,8 +120,16 @@ export function createTackAgentServer(
           if (!entry) {
             return formatExecuteMcpResult(sessionError(`Unknown session "${session}"`));
           }
-          return formatExecuteMcpResult(await entry.exec(code, onTrace ? { onTrace } : undefined));
+          return formatExecuteMcpResult(await entry.exec(code, execOptions), session);
         }
+
+        if (sessionsSupported) {
+          const entry = await defaultSession(fresh === true);
+          if (entry) {
+            return formatExecuteMcpResult(await entry.exec(code, execOptions), defaultSessionId);
+          }
+        }
+
         const perCall = onTrace ? createExecutionEngine({ ...engineOptions, onTrace }) : engine;
         return formatExecuteMcpResult(await perCall.execute(code));
       } catch {
@@ -327,17 +362,19 @@ type ExecuteMcpStructuredContent =
   | {
     readonly status: "completed";
     readonly result: unknown;
+    readonly session?: string | undefined;
     readonly emitted?: number | undefined;
     readonly logs: readonly string[];
   }
   | {
     readonly status: "error";
     readonly error: NonNullable<ExecutionResult["error"]>;
+    readonly session?: string | undefined;
     readonly emitted?: number | undefined;
     readonly logs: readonly string[];
   };
 
-function formatExecuteMcpResult(result: ExecutionResult): {
+function formatExecuteMcpResult(result: ExecutionResult, session?: string): {
   readonly content: ContentBlock[];
   readonly structuredContent: ExecuteMcpStructuredContent;
   readonly isError?: true;
@@ -350,13 +387,14 @@ function formatExecuteMcpResult(result: ExecutionResult): {
 
   return {
     content: content.length > 0 ? content : [{ type: "text", text: "(no result)" }],
-    structuredContent: executeStructuredContent(result),
+    structuredContent: executeStructuredContent(result, session),
     ...(result.ok ? {} : { isError: true as const })
   };
 }
 
-function executeStructuredContent(result: ExecutionResult): ExecuteMcpStructuredContent {
+function executeStructuredContent(result: ExecutionResult, session?: string): ExecuteMcpStructuredContent {
   const emitted = result.emitted.length > 0 ? { emitted: result.emitted.length } : {};
+  const sessionField = session !== undefined ? { session } : {};
   if (!result.ok) {
     return {
       status: "error",
@@ -364,6 +402,7 @@ function executeStructuredContent(result: ExecutionResult): ExecuteMcpStructured
         phase: "runtime",
         message: "Execution failed"
       },
+      ...sessionField,
       ...emitted,
       logs: result.logs
     };
@@ -372,6 +411,7 @@ function executeStructuredContent(result: ExecutionResult): ExecuteMcpStructured
   return {
     status: "completed",
     result: "result" in result ? result.result ?? null : null,
+    ...sessionField,
     ...emitted,
     logs: result.logs
   };
