@@ -1,7 +1,7 @@
 import {
-  ownDataEntries,
-  ownDataRecord,
-  ownDataValue as ownValue,
+  ownField,
+  sanitizeData,
+  sanitizeRecord,
   type TackServerConfig
 } from "@tack/core";
 
@@ -54,14 +54,14 @@ export class StreamableHttpMcpClient implements McpClient {
     readonly name: string;
     readonly arguments: Record<string, unknown>;
   }): Promise<unknown> {
-    const name = ownValue<unknown>(input, "name");
+    const name = ownField<unknown>(input, "name");
     if (typeof name !== "string") {
       throw new Error("MCP HTTP tool name is required");
     }
 
     return this.request("tools/call", {
       name,
-      arguments: ownDataRecord(ownValue<unknown>(input, "arguments"))
+      arguments: sanitizeRecord(ownField(input, "arguments"))
     });
   }
 
@@ -145,15 +145,15 @@ export class StreamableHttpMcpClient implements McpClient {
 }
 
 function normalizeHttpServerConfig(config: HttpServerConfig): HttpServerConfig {
-  const url = ownValue<unknown>(config, "url");
-  if (typeof url !== "string") {
+  const clean = sanitizeData(config, {}) as Record<string, unknown>;
+  if (typeof clean["url"] !== "string") {
     throw new Error("Invalid HTTP MCP server config: missing url");
   }
 
-  const headers = ownStringRecord(ownValue<unknown>(config, "headers"));
+  const headers = stringRecord(clean["headers"]);
   return {
     transport: "http",
-    url,
+    url: clean["url"],
     ...(headers ? { headers } : {})
   };
 }
@@ -234,17 +234,18 @@ function asRecord(value: unknown): Record<string, unknown> | undefined {
 
 function resolveHeaderValues(headers: Readonly<Record<string, string>>): Record<string, string> {
   return Object.fromEntries(
-    ownDataEntries<string>(headers).map(([name, value]) => [name, interpolateEnv(value)])
+    Object.entries(headers).map(([name, value]) => [name, interpolateEnv(value)])
   );
 }
 
-function ownStringRecord(value: unknown): Readonly<Record<string, string>> | undefined {
+/** Keep only string-valued entries of an already-sanitized record. */
+function stringRecord(value: unknown): Readonly<Record<string, string>> | undefined {
   if (typeof value !== "object" || value === null || Array.isArray(value)) {
     return undefined;
   }
 
   const normalized = Object.create(null) as Record<string, string>;
-  for (const [key, entryValue] of ownDataEntries<unknown>(value)) {
+  for (const [key, entryValue] of Object.entries(value)) {
     if (typeof entryValue === "string") {
       normalized[key] = entryValue;
     }

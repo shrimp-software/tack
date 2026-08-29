@@ -1,5 +1,5 @@
 import { toIdentifier } from "./ids.js";
-import { ownField, sanitizeData } from "./sanitize.js";
+import { ownField, sanitizeData, sanitizeRecord } from "./sanitize.js";
 import {
   objectRecord as schemaRecord,
   schemaProperties
@@ -149,20 +149,13 @@ function operationExample(operation: TackOperation): string {
 export function operationArgs(operation: TackOperation, args: unknown): Record<string, unknown> {
   // Both inputs are trust boundaries: `args` comes from code-mode / SDK callers,
   // `operation` may be hand-built. Snapshot each to plain own data.
-  const merged = Object.assign(Object.create(null) as Record<string, unknown>, plainRecord(args));
-  for (const [key, value] of Object.entries(plainRecord(ownField(operation, "injectedArgs")))) {
+  const merged = sanitizeRecord(args);
+  for (const [key, value] of Object.entries(sanitizeRecord(ownField(operation, "injectedArgs")))) {
     if (typeof value === "string") {
       merged[key] = value;
     }
   }
   return merged;
-}
-
-function plainRecord(value: unknown): Record<string, unknown> {
-  const clean = sanitizeData(value, {});
-  return typeof clean === "object" && clean !== null && !Array.isArray(clean)
-    ? (clean as Record<string, unknown>)
-    : (Object.create(null) as Record<string, unknown>);
 }
 
 export function hasRequiredInput(schema: JsonSchema): boolean {

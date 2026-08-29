@@ -101,6 +101,21 @@ function nonDataError(kind: string): never {
 }
 
 /**
+ * {@link sanitizeData} narrowed to a plain record: a non-object (or array)
+ * input yields an empty null-prototype object. For sanitizing loose
+ * `Record<string, unknown>` inputs like tool-call arguments.
+ */
+export function sanitizeRecord(
+  value: unknown,
+  options: SanitizeOptions = {}
+): Record<string, unknown> {
+  const clean = sanitizeData(value, options);
+  return typeof clean === "object" && clean !== null && !Array.isArray(clean)
+    ? (clean as Record<string, unknown>)
+    : (Object.create(null) as Record<string, unknown>);
+}
+
+/**
  * Read one own, enumerable-or-not *data* property off `object` — `undefined` if
  * it is absent, inherited, or an accessor (the getter is never invoked).
  *

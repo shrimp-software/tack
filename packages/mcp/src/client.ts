@@ -2,8 +2,8 @@ import { Client } from "@modelcontextprotocol/client";
 import { StdioClientTransport } from "@modelcontextprotocol/client/stdio";
 import {
   TackRuntimeError,
-  ownDataEntries,
-  ownDataValue as ownValue,
+  ownField,
+  sanitizeRecord,
   type HttpServerConfig,
   type StdioServerConfig,
   type TackConfig
@@ -89,15 +89,20 @@ export async function openConnection(serverConfig: TackConfig["servers"][string]
   return openStdioConnection(normalized);
 }
 
+/**
+ * Validate an untrusted server config into the MCP-connectable subset. This is
+ * the lazy per-server boundary: reads are getter-safe and a malformed field
+ * throws a specific `TackRuntimeError` that the caller defers to invoke time.
+ */
 export function normalizeServerConfig(serverConfig: TackConfig["servers"][string]): McpServerConfig {
-  const transport = ownValue<unknown>(serverConfig, "transport");
+  const transport = ownField<unknown>(serverConfig, "transport");
   if (transport === "http") {
-    const url = ownValue<unknown>(serverConfig, "url");
+    const url = ownField<unknown>(serverConfig, "url");
     if (typeof url !== "string") {
       throw new TackRuntimeError({ message: "Invalid HTTP MCP server config: missing url" });
     }
 
-    const headers = optionalStringRecord(serverConfig, "headers");
+    const headers = optionalStringRecord(ownField(serverConfig, "headers"), "headers");
     return {
       transport,
       url,
@@ -106,15 +111,15 @@ export function normalizeServerConfig(serverConfig: TackConfig["servers"][string
   }
 
   if (transport === "stdio") {
-    const command = ownValue<unknown>(serverConfig, "command");
+    const command = ownField<unknown>(serverConfig, "command");
     if (typeof command !== "string") {
       throw new TackRuntimeError({ message: "Invalid stdio MCP server config: missing command" });
     }
 
-    const args = optionalStringArray(serverConfig, "args");
-    const env = optionalStringRecord(serverConfig, "env");
-    const inheritEnv = optionalBoolean(serverConfig, "inheritEnv");
-    const cwd = optionalString(serverConfig, "cwd");
+    const args = optionalStringArray(ownField(serverConfig, "args"), "args");
+    const env = optionalStringRecord(ownField(serverConfig, "env"), "env");
+    const inheritEnv = optionalBoolean(ownField(serverConfig, "inheritEnv"), "inheritEnv");
+    const cwd = optionalString(ownField(serverConfig, "cwd"), "cwd");
     return {
       transport,
       command,
@@ -166,51 +171,39 @@ function scopedProcessEnv(
   };
 }
 
-function optionalString(
-  object: object,
-  key: string
-): string | undefined {
-  const value = ownValue<unknown>(object, key);
+function optionalString(value: unknown, label: string): string | undefined {
   if (value === undefined) {
     return undefined;
   }
   if (typeof value !== "string") {
-    throw new TackRuntimeError({ message: `Invalid MCP server config: ${key} must be a string` });
+    throw new TackRuntimeError({ message: `Invalid MCP server config: ${label} must be a string` });
   }
   return value;
 }
 
-function optionalBoolean(
-  object: object,
-  key: string
-): boolean | undefined {
-  const value = ownValue<unknown>(object, key);
+function optionalBoolean(value: unknown, label: string): boolean | undefined {
   if (value === undefined) {
     return undefined;
   }
   if (typeof value !== "boolean") {
-    throw new TackRuntimeError({ message: `Invalid MCP server config: ${key} must be a boolean` });
+    throw new TackRuntimeError({ message: `Invalid MCP server config: ${label} must be a boolean` });
   }
   return value;
 }
 
-function optionalStringArray(
-  object: object,
-  key: string
-): readonly string[] | undefined {
-  const value = ownValue<unknown>(object, key);
+function optionalStringArray(value: unknown, label: string): readonly string[] | undefined {
   if (value === undefined) {
     return undefined;
   }
   if (!Array.isArray(value)) {
-    throw new TackRuntimeError({ message: `Invalid MCP server config: ${key} must be a string array` });
+    throw new TackRuntimeError({ message: `Invalid MCP server config: ${label} must be a string array` });
   }
 
   const normalized: string[] = [];
   for (let index = 0; index < value.length; index += 1) {
     const descriptor = Object.getOwnPropertyDescriptor(value, String(index));
     if (!descriptor?.enumerable || !("value" in descriptor) || typeof descriptor.value !== "string") {
-      throw new TackRuntimeError({ message: `Invalid MCP server config: ${key} must be a string array` });
+      throw new TackRuntimeError({ message: `Invalid MCP server config: ${label} must be a string array` });
     }
     normalized.push(descriptor.value);
   }
@@ -218,25 +211,20 @@ function optionalStringArray(
 }
 
 function optionalStringRecord(
-  object: object,
-  key: string
+  value: unknown,
+  label: string
 ): Readonly<Record<string, string>> | undefined {
-  const value = ownValue<unknown>(object, key);
   if (value === undefined) {
     return undefined;
   }
-  if (
-    typeof value !== "object" ||
-    value === null ||
-    Array.isArray(value)
-  ) {
-    throw new TackRuntimeError({ message: `Invalid MCP server config: ${key} must be a string record` });
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    throw new TackRuntimeError({ message: `Invalid MCP server config: ${label} must be a string record` });
   }
 
   const normalized = Object.create(null) as Record<string, string>;
-  for (const [entryKey, entryValue] of ownDataEntries<unknown>(value)) {
+  for (const [entryKey, entryValue] of Object.entries(sanitizeRecord(value))) {
     if (typeof entryValue !== "string") {
-      throw new TackRuntimeError({ message: `Invalid MCP server config: ${key} must be a string record` });
+      throw new TackRuntimeError({ message: `Invalid MCP server config: ${label} must be a string record` });
     }
     normalized[entryKey] = entryValue;
   }
