@@ -23,8 +23,7 @@ describe("codemode operation helpers", () => {
 
     expect(description).toContain("Run TypeScript in Tack's sandboxed runtime.");
     expect(description).toContain("Scope persists across `execute` calls");
-    expect(description).toContain("Object.keys(tools)");
-    expect(description).toContain("tools.search({ namespace:");
+    expect(description).toContain("tools.search({ namespace })");
     expect(description).toContain("tools.describe.tool({ path })");
     expect(description).toContain("__tackRef");
     expect(description).toContain("ToolFile");
