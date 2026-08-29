@@ -1,6 +1,11 @@
 export interface SanitizeOptions {
-  /** Message for the `Error` thrown when a reference cycle is reached. */
-  readonly onCycle: string;
+  /**
+   * Message for the `Error` thrown when a reference cycle is reached. Omit to
+   * instead break the cycle silently (the back-reference is dropped) — right for
+   * discovery / result / schema data, where a self-referential blob is odd but
+   * not fatal.
+   */
+  readonly onCycle?: string;
   /**
    * How to treat values that have no JSON data form (bigint / function /
    * symbol). `"throw"` (default) rejects them; `"stringify"` coerces to a
@@ -15,10 +20,10 @@ export interface SanitizeOptions {
  *
  * Objects become null-prototype and keys are assigned with
  * `Object.defineProperty`, so a literal `__proto__` key round-trips as ordinary
- * data instead of mutating a prototype. Arrays are rebuilt index by index;
- * getter / non-enumerable / hole slots become `null`. Own keys whose sanitized
- * value is `undefined` are dropped. Primitives pass through. Throws
- * `options.onCycle` on a reference cycle.
+ * data instead of mutating a prototype. Arrays are compacted: getter,
+ * non-enumerable, and hole slots are dropped, the rest keep their order. Own
+ * object keys whose sanitized value is `undefined` are dropped. Primitives pass
+ * through. Throws `options.onCycle` on a reference cycle.
  *
  * This is the single trust boundary: call it once where untrusted structured
  * data enters (config file, MCP response, tool args, HTTP body, VM value, option
@@ -50,7 +55,10 @@ function sanitize(value: unknown, options: SanitizeOptions, seen: WeakSet<object
 
   const object = value as object;
   if (seen.has(object)) {
-    throw new Error(options.onCycle);
+    if (options.onCycle !== undefined) {
+      throw new Error(options.onCycle);
+    }
+    return undefined;
   }
   seen.add(object);
   try {
@@ -58,11 +66,10 @@ function sanitize(value: unknown, options: SanitizeOptions, seen: WeakSet<object
       const out: unknown[] = [];
       for (let index = 0; index < object.length; index += 1) {
         const descriptor = Object.getOwnPropertyDescriptor(object, index);
-        const item =
-          descriptor && descriptor.enumerable && "value" in descriptor
-            ? sanitize(descriptor.value, options, seen)
-            : undefined;
-        out[index] = item === undefined ? null : item;
+        if (!descriptor || !descriptor.enumerable || !("value" in descriptor)) {
+          continue;
+        }
+        out.push(sanitize(descriptor.value, options, seen));
       }
       return out;
     }

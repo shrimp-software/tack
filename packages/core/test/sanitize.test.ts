@@ -57,7 +57,7 @@ describe("sanitizeData", () => {
     expect(Object.getPrototypeOf(clean.a)).toBeNull();
   });
 
-  it("replaces getter / non-enumerable / hole array slots with null", () => {
+  it("compacts getter / non-enumerable / hole array slots out", () => {
     const arr: unknown[] = ["safe"];
     Object.defineProperty(arr, "1", {
       enumerable: true,
@@ -67,15 +67,23 @@ describe("sanitizeData", () => {
     });
     Object.defineProperty(arr, "2", { enumerable: false, value: "hidden" });
     arr.length = 4; // index 3 is a hole
+    arr.push("tail");
 
-    expect(sanitizeData(arr, opts)).toEqual(["safe", null, null, null]);
+    expect(sanitizeData(arr, opts)).toEqual(["safe", "tail"]);
   });
 
-  it("throws onCycle for reference cycles", () => {
+  it("throws onCycle for reference cycles when a message is given", () => {
     const source: Record<string, unknown> = {};
     source["self"] = source;
 
     expect(() => sanitizeData(source, opts)).toThrow("cycle");
+  });
+
+  it("breaks the cycle silently when onCycle is omitted", () => {
+    const source: Record<string, unknown> = { keep: 1 };
+    source["self"] = source;
+
+    expect(sanitizeData(source, {})).toEqual({ keep: 1 });
   });
 
   it("rejects non-data values by default and stringifies them on request", () => {

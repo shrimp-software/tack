@@ -1,7 +1,6 @@
 import { isAbsolute, resolve } from "node:path";
 import { z } from "zod";
 
-import { ownDataValue as ownValue } from "../own-data.js";
 import type { SourceKind } from "../source-kind.js";
 import type { ModuleServerConfig } from "../types.js";
 
@@ -15,12 +14,7 @@ export const moduleSourceKind: SourceKind<ModuleServerConfig> = {
   transport: "module",
   configSchema: ModuleServerConfigSchema,
   connection(config) {
-    const entry = ownValue<string>(config, "entry");
-    if (typeof entry !== "string") {
-      return undefined;
-    }
-
-    return { transport: "module", entry };
+    return typeof config.entry === "string" ? { transport: "module", entry: config.entry } : undefined;
   },
   resolvePaths(config, baseDir) {
     return isAbsolute(config.entry)

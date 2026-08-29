@@ -3,6 +3,7 @@ import { dirname } from "node:path";
 import { z } from "zod";
 
 import { TackConfigError, TackIoError } from "./errors.js";
+import { sanitizeData } from "./sanitize.js";
 import {
   buildServerConfigSchema,
   resolveConfigPaths,
@@ -87,7 +88,7 @@ export function parseConfig(
   input: unknown,
   kinds: readonly SourceKind[] = BUILTIN_SOURCE_KINDS
 ): TackConfig {
-  const data = cloneConfigData(input);
+  const data = sanitizeData(input, { onCycle: "Cyclic Tack config data is not supported" });
   if (hasRemovedShapeConfig(data)) {
     throw new Error("config.shape was removed; Tack now infers operation paths automatically.");
   }
@@ -99,47 +100,6 @@ function hasRemovedShapeConfig(input: unknown): boolean {
     input !== null &&
     !Array.isArray(input) &&
     Object.prototype.hasOwnProperty.call(input, "shape");
-}
-
-function cloneConfigData(value: unknown, seen = new WeakSet<object>()): unknown {
-  if (typeof value !== "object" || value === null) {
-    return value;
-  }
-
-  if (seen.has(value)) {
-    throw new Error("Cyclic Tack config data is not supported");
-  }
-
-  seen.add(value);
-  try {
-    if (Array.isArray(value)) {
-      const array: unknown[] = [];
-      for (let index = 0; index < value.length; index += 1) {
-        const descriptor = Object.getOwnPropertyDescriptor(value, String(index));
-        if (descriptor?.enumerable && "value" in descriptor) {
-          array[index] = cloneConfigData(descriptor.value, seen);
-        }
-      }
-      return array;
-    }
-
-    const object: Record<string, unknown> = Object.create(null);
-    for (const [key, descriptor] of Object.entries(Object.getOwnPropertyDescriptors(value))) {
-      if (!descriptor.enumerable || !("value" in descriptor)) {
-        continue;
-      }
-
-      Object.defineProperty(object, key, {
-        value: cloneConfigData(descriptor.value, seen),
-        enumerable: true,
-        configurable: true,
-        writable: true
-      });
-    }
-    return object;
-  } finally {
-    seen.delete(value);
-  }
 }
 
 async function loadJson(path: string): Promise<unknown> {

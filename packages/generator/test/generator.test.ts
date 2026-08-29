@@ -1097,7 +1097,7 @@ describe("generateSdk", () => {
     await expectGeneratedSdkToCompile(tmpPath);
   });
 
-  it("rejects cyclic JSON Schema data before compiling generated types", async () => {
+  it("prunes cyclic JSON Schema back-references at the discovery boundary", async () => {
     tmpPath = await mkdtemp(join(tmpdir(), "tack-generator-cyclic-schema-"));
     const inputSchema: Record<string, unknown> = {
       type: "object",
@@ -1126,10 +1126,11 @@ describe("generateSdk", () => {
       new Date("2026-07-23T00:00:00.000Z")
     );
 
-    await expect(generateSdkPromise({ manifest, outDir: tmpPath }))
-      .rejects
-      .toThrow("Cyclic JSON Schema data is not supported in generated SDK types");
-    await expect(readFile(join(tmpPath, "index.ts"), "utf8")).rejects.toThrow();
+    // buildManifest sanitizes discovery data: the self-reference is dropped, so
+    // the schema is finite and the SDK generates cleanly without it.
+    expect(manifest.tools["fake.echo"]?.inputSchema).toEqual({ type: "object", properties: {} });
+    await generateSdkPromise({ manifest, outDir: tmpPath });
+    expect(await readFile(join(tmpPath, "index.ts"), "utf8")).toContain("createFakeClient");
   });
 
   it("ignores TypeScript-only schema extensions in discovered schemas", async () => {

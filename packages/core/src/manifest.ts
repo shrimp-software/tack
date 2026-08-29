@@ -1,5 +1,5 @@
 import { dedupeName, sanitizeId, toIdentifier } from "./ids.js";
-import { ownDataEntries, ownDataValue as ownValue, ownDataValues } from "./own-data.js";
+import { sanitizeData } from "./sanitize.js";
 import { manifestConnectionFor, type SourceKind } from "./source-kind.js";
 import { BUILTIN_SOURCE_KINDS } from "./source-kinds/index.js";
 import type {
@@ -7,7 +7,6 @@ import type {
   TackConfig,
   TackManifest,
   TackManifestServer,
-  TackServerConfig,
   TackTool
 } from "./types.js";
 
@@ -30,18 +29,26 @@ export function buildManifest(
   now = new Date(),
   kinds: readonly SourceKind[] = BUILTIN_SOURCE_KINDS
 ): TackManifest {
+  // The trust boundary: config and discovery results may be hand-built or come
+  // straight off an MCP server. Snapshot both to plain own-data once, then read
+  // plain typed fields for the rest of the function.
+  const cleanConfig = sanitizeData(config, {
+    onCycle: "Cyclic Tack config data is not supported"
+  }) as TackConfig;
+  // A self-referential tool schema from a misbehaving server is odd, not fatal —
+  // break the cycle and let the operation planner's own guard handle the rest.
+  const cleanDiscovered = sanitizeData(discoveredServers, {}) as readonly DiscoveredServer[];
+
   const servers = Object.create(null) as Record<string, TackManifestServer>;
   const tools = Object.create(null) as Record<string, TackTool>;
-  const configuredServers = ownValue<TackConfig["servers"]>(config, "servers") ?? {};
   const discoveredByServer = new Map(
-    discoveredServers.flatMap((server) => {
-      const serverId = ownValue<string>(server, "serverId");
-      return typeof serverId === "string" ? [[serverId, server] as const] : [];
-    })
+    cleanDiscovered
+      .filter((server): server is DiscoveredServer => server != null && typeof server.serverId === "string")
+      .map((server) => [server.serverId, server] as const)
   );
   const usedNamespaces = new Set<string>(["close", "index", "tack", "types"]);
 
-  for (const [serverId, serverConfig] of ownDataEntries<TackServerConfig>(configuredServers)) {
+  for (const [serverId, serverConfig] of Object.entries(cleanConfig.servers ?? {})) {
     const discovered = discoveredByServer.get(serverId);
     if (!discovered) {
       continue;
@@ -57,34 +64,26 @@ export function buildManifest(
     const serverToolIds: string[] = [];
     const namespaceName = dedupeNamespaceName(toIdentifier(serverId, "server"), usedNamespaces);
 
-    const discoveredTools = ownDataValues<DiscoveredTool>(ownValue<readonly DiscoveredTool[]>(discovered, "tools"));
-    for (const tool of discoveredTools.filter(hasOwnDiscoveredToolName).sort(compareDiscoveredTools)) {
-      const toolName = ownValue<string>(tool, "name") ?? "";
-      const toolDescription = ownValue<string>(tool, "description");
-      const inputSchema = ownValue<JsonSchema>(tool, "inputSchema");
-      const outputSchema = ownValue<JsonSchema>(tool, "outputSchema");
-      const annotations = ownValue<Record<string, unknown>>(tool, "annotations");
-      const baseToolId = sanitizeId(toolName, "tool");
-      const toolId = dedupeName(baseToolId, usedToolIds);
+    const discoveredTools = (discovered.tools ?? [])
+      .filter((tool): tool is DiscoveredTool => tool != null && typeof tool.name === "string")
+      .sort(compareDiscoveredTools);
+    for (const tool of discoveredTools) {
+      const toolName = tool.name;
+      const toolId = dedupeName(sanitizeId(toolName, "tool"), usedToolIds);
       const canonicalId = `${serverId}.${toolId}`;
-      const sdkName = dedupeName(
-        toIdentifier(toolName, "tool"),
-        usedSdkNames
-      );
+      const sdkName = dedupeName(toIdentifier(toolName, "tool"), usedSdkNames);
 
-      const manifestTool: TackTool = {
+      tools[canonicalId] = {
         id: canonicalId,
         serverId,
         namespaceName,
         sdkName,
         upstreamName: toolName,
-        ...(toolDescription ? { description: toolDescription } : {}),
-        inputSchema: inputSchema ?? { type: "object", additionalProperties: true },
-        ...(outputSchema ? { outputSchema } : {}),
-        ...(annotations ? { annotations } : {})
+        ...(tool.description ? { description: tool.description } : {}),
+        inputSchema: tool.inputSchema ?? { type: "object", additionalProperties: true },
+        ...(tool.outputSchema ? { outputSchema: tool.outputSchema } : {}),
+        ...(tool.annotations ? { annotations: tool.annotations } : {})
       };
-
-      tools[canonicalId] = manifestTool;
       serverToolIds.push(canonicalId);
     }
 
@@ -104,14 +103,10 @@ export function buildManifest(
 }
 
 function compareDiscoveredTools(left: DiscoveredTool, right: DiscoveredTool): number {
-  const leftName = ownValue<string>(left, "name") ?? "";
-  const rightName = ownValue<string>(right, "name") ?? "";
-  return sanitizeId(leftName, "tool").localeCompare(sanitizeId(rightName, "tool")) ||
-    leftName.localeCompare(rightName);
-}
-
-function hasOwnDiscoveredToolName(tool: DiscoveredTool): boolean {
-  return typeof ownValue<string>(tool, "name") === "string";
+  return (
+    sanitizeId(left.name, "tool").localeCompare(sanitizeId(right.name, "tool")) ||
+    left.name.localeCompare(right.name)
+  );
 }
 
 function dedupeNamespaceName(base: string, used: Set<string>): string {

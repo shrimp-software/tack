@@ -1,9 +1,7 @@
 import { z } from "zod";
 
-import { ownDataValue as ownValue } from "../own-data.js";
 import type { SourceKind } from "../source-kind.js";
 import type { StdioServerConfig } from "../types.js";
-import { ownStringArray, ownStringRecord } from "./shared.js";
 
 const StdioServerConfigSchema = z.object({
   transport: z.literal("stdio"),
@@ -19,22 +17,16 @@ export const stdioSourceKind: SourceKind<StdioServerConfig> = {
   transport: "stdio",
   configSchema: StdioServerConfigSchema,
   connection(config) {
-    const command = ownValue<string>(config, "command");
-    if (typeof command !== "string") {
+    if (typeof config.command !== "string") {
       return undefined;
     }
-
-    const args = ownStringArray(config, "args");
-    const env = ownStringRecord(config, "env");
-    const inheritEnv = ownValue<boolean>(config, "inheritEnv");
-    const cwd = ownValue<string>(config, "cwd");
     return {
       transport: "stdio",
-      command,
-      ...(args ? { args } : {}),
-      ...(env ? { env } : {}),
-      ...(inheritEnv === true ? { inheritEnv: true } : {}),
-      ...(cwd ? { cwd } : {})
+      command: config.command,
+      ...(config.args?.length ? { args: config.args } : {}),
+      ...(config.env && Object.keys(config.env).length > 0 ? { env: config.env } : {}),
+      ...(config.inheritEnv === true ? { inheritEnv: true } : {}),
+      ...(config.cwd ? { cwd: config.cwd } : {})
     };
   }
 };

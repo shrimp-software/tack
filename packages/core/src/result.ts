@@ -1,43 +1,36 @@
-import { ownDataValue as ownValue, ownDataValues } from "./own-data.js";
+import { ownField, sanitizeData } from "./sanitize.js";
 import type { TackResult } from "./types.js";
 
-function extractText(raw: unknown): string {
-  const rawObject = objectRecord(raw);
-  if (!rawObject) {
-    return "";
-  }
+interface TextContentPart {
+  readonly type?: unknown;
+  readonly text?: unknown;
+}
 
-  const content = ownValue<unknown>(rawObject, "content");
+function extractText(content: unknown): string {
   if (!Array.isArray(content)) {
     return "";
   }
 
-  return ownDataValues<unknown>(content)
-    .flatMap((part) => {
-      const partObject = objectRecord(part);
-      const type = ownValue<unknown>(partObject, "type");
-      const text = ownValue<unknown>(partObject, "text");
-      if (
-        type === "text" &&
-        typeof text === "string"
-      ) {
-        return [text];
-      }
-
-      return [];
+  return content
+    .flatMap((part): string[] => {
+      const { type, text } = (part ?? {}) as TextContentPart;
+      return type === "text" && typeof text === "string" ? [text] : [];
     })
     .join("\n");
 }
 
 export function createTackResult<TStructured = unknown>(raw: unknown): TackResult<TStructured> {
-  const rawObject = objectRecord(raw);
-  const structuredContent = ownValue<TStructured>(rawObject, "structuredContent");
-  const text = extractText(raw);
+  // `structuredContent` is handed back to callers verbatim (a local module tool
+  // may legitimately return a Date / Map / class instance), so read it
+  // getter-safe but do not deep-copy. `content` is plain MCP text parts, so
+  // snapshot it deeply and eagerly — later mutation of `raw` cannot affect us.
+  const structuredContent = ownField<TStructured>(raw, "structuredContent");
+  const isError = ownField(raw, "isError") === true;
+  const text = extractText(sanitizeData(ownField(raw, "content"), {}));
 
   return {
     raw,
-    isError:
-      ownValue<unknown>(rawObject, "isError") === true,
+    isError,
     structuredContent,
     text: () => text,
     json: <T = TStructured>() => {
@@ -52,8 +45,4 @@ export function createTackResult<TStructured = unknown>(raw: unknown): TackResul
       return JSON.parse(text) as T;
     }
   };
-}
-
-function objectRecord(value: unknown): object | undefined {
-  return typeof value === "object" && value !== null ? value : undefined;
 }

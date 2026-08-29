@@ -1,9 +1,7 @@
 import { z } from "zod";
 
-import { ownDataValue as ownValue } from "../own-data.js";
 import type { SourceKind } from "../source-kind.js";
 import type { HttpServerConfig } from "../types.js";
-import { ownStringRecord } from "./shared.js";
 
 const HttpServerConfigSchema = z.object({
   transport: z.literal("http"),
@@ -16,16 +14,13 @@ export const httpSourceKind: SourceKind<HttpServerConfig> = {
   transport: "http",
   configSchema: HttpServerConfigSchema,
   connection(config) {
-    const url = ownValue<string>(config, "url");
-    if (typeof url !== "string") {
+    if (typeof config.url !== "string") {
       return undefined;
     }
-
-    const headers = ownStringRecord(config, "headers");
     return {
       transport: "http",
-      url,
-      ...(headers ? { headers } : {})
+      url: config.url,
+      ...(config.headers && Object.keys(config.headers).length > 0 ? { headers: config.headers } : {})
     };
   }
 };

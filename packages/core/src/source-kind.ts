@@ -32,9 +32,10 @@ export interface SourceKind<TConfig extends TackServerConfig = TackServerConfig>
   /** Schema for one server config of this kind. Pins `transport` to a literal. */
   readonly configSchema: z.ZodType<TConfig>;
   /**
-   * Project a parsed config of this kind to its manifest connection fields, or
-   * `undefined` when the config is too malformed to project (mirrors the old
-   * `manifestServerConnection` skip).
+   * Project a config of this kind to its manifest connection fields. The config
+   * is already sanitized (own data only), so this reads plain typed fields; it
+   * returns `undefined` when a required field is missing — `buildManifest`
+   * accepts hand-built configs that never passed `configSchema`.
    */
   connection(config: TConfig): ManifestServerConnection | undefined;
   /**
