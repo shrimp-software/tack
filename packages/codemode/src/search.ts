@@ -44,10 +44,8 @@ export function searchOperations(
   const operations = filterAllowedOperations(listOperations(manifest), policy)
     .filter((operation) => !namespace || normalizeSearchText(operation.namespaceName) === namespace);
 
-  if (query.length === 0 && !namespace) {
-    return emptySearchResult();
-  }
-
+  // An empty query lists the whole (paginated) catalog — that's what an agent
+  // calling `search({ query: "" })` to discover operations wants.
   const matches = query.length === 0
     ? operations
       .sort((left, right) => left.fullPathString.localeCompare(right.fullPathString))
@@ -97,14 +95,6 @@ export function normalizeSearchInput(input: unknown): SearchInput {
   return { query: "" };
 }
 
-function emptySearchResult(): SearchResult {
-  return {
-    items: [],
-    total: 0,
-    hasMore: false,
-    nextOffset: null
-  };
-}
 
 function toSearchItem(
   operation: TackOperation,

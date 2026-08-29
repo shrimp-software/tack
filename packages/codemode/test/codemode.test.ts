@@ -80,12 +80,12 @@ describe("codemode operation helpers", () => {
       query: "list",
       namespace: "grafana"
     }).items.every((item) => item.path.startsWith("grafana."))).toBe(true);
-    expect(searchOperations(manifest, { query: "" })).toEqual({
-      items: [],
-      total: 0,
-      hasMore: false,
-      nextOffset: null
-    });
+    const listAll = searchOperations(manifest, { query: "" });
+    expect(listAll.total).toBe(3);
+    expect(listAll.items.map((item) => item.path)).toEqual(
+      [...listAll.items.map((item) => item.path)].sort()
+    );
+    expect(listAll.items[0]).toMatchObject({ path: "grafana.alerting.rules.get", score: 0, matchedTokens: [] });
     const enumerated = searchOperations(manifest, { query: "", namespace: "grafana" });
     expect(enumerated.total).toBe(3);
     expect(enumerated.items[0]).toMatchObject({
