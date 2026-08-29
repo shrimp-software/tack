@@ -1,7 +1,6 @@
 import { toIdentifier } from "./ids.js";
-import { ownDataEntries, ownDataRecord, ownDataValue as ownValue, ownDataValues } from "./own-data.js";
+import { ownField, sanitizeData } from "./sanitize.js";
 import {
-  cloneJsonData,
   objectRecord as schemaRecord,
   schemaProperties
 } from "./schema-data.js";
@@ -45,11 +44,14 @@ const LEADING_ACTION_TOKENS = new Set([
 ]);
 
 export function listOperations(manifest: TackManifest): TackOperation[] {
+  // The trust boundary: a manifest may be hand-built or read from a JSON cache.
+  // Snapshot to plain own data once (cycles broken), then read plain fields.
+  const clean = sanitizeData(manifest, {}) as TackManifest | undefined;
+
   const usedPathsByServer = new Map<string, Set<string>>();
   const operations: TackOperation[] = [];
-  const manifestRecord = schemaRecord(manifest);
-  const manifestTools = schemaRecord(ownValue(manifestRecord, "tools"));
-  const tools = ownDataValues<unknown>(manifestTools)
+  const manifestTools = schemaRecord(clean?.tools);
+  const tools = Object.values(manifestTools ?? {})
     .flatMap(toOperationTool)
     .sort(compareToolsForOperationPlanning);
 
@@ -89,20 +91,19 @@ export function listOperations(manifest: TackManifest): TackOperation[] {
 
 function toOperationTool(tool: unknown): OperationTool[] {
   const record = schemaRecord(tool);
-  const id = ownValue<string>(record, "id");
-  const serverId = ownValue<string>(record, "serverId");
-  const namespaceName = ownValue<string>(record, "namespaceName");
-  const sdkName = ownValue<string>(record, "sdkName");
-  const upstreamName = ownValue<string>(record, "upstreamName");
-  const inputSchema = ownValue<JsonSchema>(record, "inputSchema");
-  const inputSchemaRecord = schemaRecord(inputSchema);
+  if (!record) {
+    return [];
+  }
+
+  const { id, serverId, namespaceName, sdkName, upstreamName, description } = record;
+  const inputSchema = schemaRecord(record["inputSchema"]);
   if (
     typeof id !== "string" ||
     typeof serverId !== "string" ||
     typeof namespaceName !== "string" ||
     typeof sdkName !== "string" ||
     typeof upstreamName !== "string" ||
-    !inputSchemaRecord
+    !inputSchema
   ) {
     return [];
   }
@@ -113,9 +114,9 @@ function toOperationTool(tool: unknown): OperationTool[] {
     namespaceName,
     sdkName,
     upstreamName,
-    description: ownValue<string>(record, "description"),
-    inputSchema: inputSchemaRecord,
-    outputSchema: ownValue<JsonSchema>(record, "outputSchema")
+    description: typeof description === "string" ? description : undefined,
+    inputSchema,
+    outputSchema: schemaRecord(record["outputSchema"])
   }];
 }
 
@@ -146,16 +147,26 @@ function operationExample(operation: TackOperation): string {
 }
 
 export function operationArgs(operation: TackOperation, args: unknown): Record<string, unknown> {
-  const base = ownDataRecord(args);
-  const injectedArgs = ownValue<Readonly<Record<string, string>>>(operation, "injectedArgs");
-  for (const [key, value] of ownDataEntries<string>(injectedArgs)) {
-    base[key] = value;
+  // Both inputs are trust boundaries: `args` comes from code-mode / SDK callers,
+  // `operation` may be hand-built. Snapshot each to plain own data.
+  const merged = Object.assign(Object.create(null) as Record<string, unknown>, plainRecord(args));
+  for (const [key, value] of Object.entries(plainRecord(ownField(operation, "injectedArgs")))) {
+    if (typeof value === "string") {
+      merged[key] = value;
+    }
   }
-  return base;
+  return merged;
+}
+
+function plainRecord(value: unknown): Record<string, unknown> {
+  const clean = sanitizeData(value, {});
+  return typeof clean === "object" && clean !== null && !Array.isArray(clean)
+    ? (clean as Record<string, unknown>)
+    : (Object.create(null) as Record<string, unknown>);
 }
 
 export function hasRequiredInput(schema: JsonSchema): boolean {
-  return schemaRequiresInput(schema);
+  return schemaRequiresInput(sanitizeData(schema, {}));
 }
 
 function schemaRequiresInput(value: unknown, seen = new WeakSet<object>()): boolean {
@@ -169,23 +180,23 @@ function schemaRequiresInput(value: unknown, seen = new WeakSet<object>()): bool
   seen.add(schema);
 
   const required = schemaValue(schema, "required");
-  if (Array.isArray(required) && ownDataValues<unknown>(required).length > 0) {
+  if (Array.isArray(required) && required.length > 0) {
     return true;
   }
 
   const allOf = schemaValue(schema, "allOf");
-  if (Array.isArray(allOf) && ownDataValues<unknown>(allOf).some((branch) => schemaRequiresInput(branch, seen))) {
+  if (Array.isArray(allOf) && allOf.some((branch) => schemaRequiresInput(branch, seen))) {
     return true;
   }
 
   const oneOf = schemaValue(schema, "oneOf");
-  const oneOfBranches = Array.isArray(oneOf) ? ownDataValues<unknown>(oneOf) : [];
+  const oneOfBranches = Array.isArray(oneOf) ? oneOf : [];
   if (oneOfBranches.length === 1 && schemaRequiresInput(oneOfBranches[0], seen)) {
     return true;
   }
 
   const anyOf = schemaValue(schema, "anyOf");
-  const anyOfBranches = Array.isArray(anyOf) ? ownDataValues<unknown>(anyOf) : [];
+  const anyOfBranches = Array.isArray(anyOf) ? anyOf : [];
   return anyOfBranches.length > 0 &&
     anyOfBranches.every((branch) => schemaRequiresInput(branch, seen));
 }
@@ -207,24 +218,24 @@ function schemaRequiresProperty(
   const required = schemaValue(schema, "required");
   if (
     Array.isArray(required) &&
-    ownDataValues<unknown>(required).some((entry) => entry === propertyName)
+    required.some((entry) => entry === propertyName)
   ) {
     return true;
   }
 
   const allOf = schemaValue(schema, "allOf");
-  if (Array.isArray(allOf) && ownDataValues<unknown>(allOf).some((branch) => schemaRequiresProperty(branch, propertyName, seen))) {
+  if (Array.isArray(allOf) && allOf.some((branch) => schemaRequiresProperty(branch, propertyName, seen))) {
     return true;
   }
 
   const oneOf = schemaValue(schema, "oneOf");
-  if (Array.isArray(oneOf) && ownDataValues<unknown>(oneOf).some((branch) => schemaRequiresProperty(branch, propertyName, seen))) {
+  if (Array.isArray(oneOf) && oneOf.some((branch) => schemaRequiresProperty(branch, propertyName, seen))) {
     return true;
   }
 
   const anyOf = schemaValue(schema, "anyOf");
   return Array.isArray(anyOf) &&
-    ownDataValues<unknown>(anyOf).some((branch) => schemaRequiresProperty(branch, propertyName, seen));
+    anyOf.some((branch) => schemaRequiresProperty(branch, propertyName, seen));
 }
 
 function operationVariants(tool: OperationTool): OperationVariant[] {
@@ -400,7 +411,7 @@ function collectDiscriminatorValues(
       continue;
     }
 
-    for (const branch of ownDataValues<unknown>(branches)) {
+    for (const branch of branches) {
       collectDiscriminatorValues(branch, propertyName, values, used, seen);
     }
   }
@@ -425,7 +436,7 @@ function addStringSchemaValues(
 
   const enumValues = schemaValue(schema, "enum");
   if (Array.isArray(enumValues)) {
-    for (const enumValue of ownDataValues<unknown>(enumValues)) {
+    for (const enumValue of enumValues) {
       addStringValue(enumValue, values, used);
     }
   }
@@ -436,7 +447,7 @@ function addStringSchemaValues(
       continue;
     }
 
-    for (const branch of ownDataValues<unknown>(branches)) {
+    for (const branch of branches) {
       addStringSchemaValues(branch, values, used, seen);
     }
   }
@@ -456,9 +467,7 @@ function omitInputProperty(
   propertyName: string,
   propertyValue?: string
 ): JsonSchema {
-  const next = cloneJsonData(schema, {
-    cycleMessage: "Cyclic JSON Schema data is not supported"
-  }) as JsonSchema;
+  const next = sanitizeData(schema, {}) as JsonSchema;
   omitSchemaProperty(next, propertyName, propertyValue);
   return next;
 }
@@ -661,14 +670,14 @@ function schemaExcludesPropertyValue(
   }
 
   const allOf = schema ? schemaValue(schema, "allOf") : undefined;
-  if (Array.isArray(allOf) && ownDataValues<unknown>(allOf).some((branch) =>
+  if (Array.isArray(allOf) && allOf.some((branch) =>
     schemaExcludesPropertyValue(branch, propertyName, propertyValue)
   )) {
     return true;
   }
 
   const anyOf = schema ? schemaValue(schema, "anyOf") : undefined;
-  const anyOfBranches = Array.isArray(anyOf) ? ownDataValues<unknown>(anyOf) : [];
+  const anyOfBranches = Array.isArray(anyOf) ? anyOf : [];
   if (
     anyOfBranches.length > 0 &&
     anyOfBranches.every((branch) => schemaExcludesPropertyValue(branch, propertyName, propertyValue))
@@ -677,7 +686,7 @@ function schemaExcludesPropertyValue(
   }
 
   const oneOf = schema ? schemaValue(schema, "oneOf") : undefined;
-  const oneOfBranches = Array.isArray(oneOf) ? ownDataValues<unknown>(oneOf) : [];
+  const oneOfBranches = Array.isArray(oneOf) ? oneOf : [];
   return oneOfBranches.length > 0 &&
     oneOfBranches.every((branch) => schemaExcludesPropertyValue(branch, propertyName, propertyValue));
 }
@@ -695,16 +704,16 @@ function schemaValueExcludesString(value: unknown, propertyValue: string): boole
 
   const enumValues = schemaValue(schema, "enum");
   if (Array.isArray(enumValues)) {
-    return !ownDataValues<unknown>(enumValues).includes(propertyValue);
+    return !enumValues.includes(propertyValue);
   }
 
   const allOf = schemaValue(schema, "allOf");
-  if (Array.isArray(allOf) && ownDataValues<unknown>(allOf).some((branch) => schemaValueExcludesString(branch, propertyValue))) {
+  if (Array.isArray(allOf) && allOf.some((branch) => schemaValueExcludesString(branch, propertyValue))) {
     return true;
   }
 
   const anyOf = schemaValue(schema, "anyOf");
-  const anyOfBranches = Array.isArray(anyOf) ? ownDataValues<unknown>(anyOf) : [];
+  const anyOfBranches = Array.isArray(anyOf) ? anyOf : [];
   if (
     anyOfBranches.length > 0 &&
     anyOfBranches.every((branch) => schemaValueExcludesString(branch, propertyValue))
@@ -713,15 +722,16 @@ function schemaValueExcludesString(value: unknown, propertyValue: string): boole
   }
 
   const oneOf = schemaValue(schema, "oneOf");
-  const oneOfBranches = Array.isArray(oneOf) ? ownDataValues<unknown>(oneOf) : [];
+  const oneOfBranches = Array.isArray(oneOf) ? oneOf : [];
   return oneOfBranches.length > 0 &&
     oneOfBranches.every((branch) => schemaValueExcludesString(branch, propertyValue));
 }
 
 function schemaProperty(schema: JsonSchema, propertyName: string): JsonSchema | undefined {
-  return ownValue<JsonSchema>(schemaProperties(schema), propertyName);
+  const value = schemaProperties(schema)?.[propertyName];
+  return schemaRecord(value);
 }
 
 function schemaValue(schema: Record<string, unknown>, key: string): unknown {
-  return ownValue(schema, key);
+  return schema[key];
 }
