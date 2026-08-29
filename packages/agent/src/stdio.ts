@@ -1,6 +1,6 @@
 import { serveStdio, type StdioServerHandle } from "@modelcontextprotocol/server/stdio";
 import {
-  ownDataValue as readOwnData,
+  ownField,
   type TackManifest,
   type TackRuntime
 } from "@tack/core";
@@ -26,11 +26,11 @@ export function serveTackMcpStdio(
 function normalizeServeOptions(
   options: ServeTackMcpStdioOptions
 ): ServeTackMcpStdioOptions {
-  const manifest = readOwnData(options, "manifest") as TackManifest;
-  const runtime = readOwnData(options, "runtime") as TackRuntime;
-  const codeRuntime = readOwnData(options, "codeRuntime") as CodeRuntime;
-  const policy = readOwnData(options, "policy") as OperationPolicy | undefined;
-  const onAuditEvent = readOwnData(options, "onAuditEvent") as ServeTackMcpStdioOptions["onAuditEvent"];
+  const manifest = ownField(options, "manifest") as TackManifest;
+  const runtime = ownField(options, "runtime") as TackRuntime;
+  const codeRuntime = ownField(options, "codeRuntime") as CodeRuntime;
+  const policy = ownField(options, "policy") as OperationPolicy | undefined;
+  const onAuditEvent = ownField(options, "onAuditEvent") as ServeTackMcpStdioOptions["onAuditEvent"];
 
   return {
     manifest,

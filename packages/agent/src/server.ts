@@ -7,7 +7,7 @@ import {
 } from "@modelcontextprotocol/server";
 import { z } from "zod";
 import {
-  ownDataValue as readOwnData,
+  ownField,
   type TackManifest,
   type TackRuntime
 } from "@tack/core";
@@ -44,12 +44,12 @@ export interface CreateTackAgentServerOptions {
 export function createTackAgentServer(
   options: CreateTackAgentServerOptions
 ): McpServer {
-  const manifest = readOwnData(options, "manifest") as TackManifest;
-  const runtime = readOwnData(options, "runtime") as TackRuntime;
-  const codeRuntime = readOwnData(options, "codeRuntime") as CodeRuntime;
-  const policy = readOwnData(options, "policy") as OperationPolicy | undefined;
-  const onAuditEvent = readOwnData(options, "onAuditEvent") as CreateTackAgentServerOptions["onAuditEvent"];
-  const sessionsAllowed = readOwnData(options, "sessions") !== false;
+  const manifest = ownField(options, "manifest") as TackManifest;
+  const runtime = ownField(options, "runtime") as TackRuntime;
+  const codeRuntime = ownField(options, "codeRuntime") as CodeRuntime;
+  const policy = ownField(options, "policy") as OperationPolicy | undefined;
+  const onAuditEvent = ownField(options, "onAuditEvent") as CreateTackAgentServerOptions["onAuditEvent"];
+  const sessionsAllowed = ownField(options, "sessions") !== false;
   const engineOptions: CreateExecutionEngineOptions = {
     manifest,
     runtime,

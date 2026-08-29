@@ -1,8 +1,8 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { timingSafeEqual } from "node:crypto";
 import {
-  ownDataValue as ownValue,
-  ownDataValues,
+  ownField,
+  sanitizeData,
   type TackManifest,
   type TackRuntime
 } from "@tack/core";
@@ -90,16 +90,16 @@ function createTackHttpService(
   if (context.users.length === 0) {
     throw new Error("Tack HTTP service requires at least one configured user token");
   }
-  const isolation = ownValue<unknown>(context.codeRuntime, "isolation");
+  const isolation = context.codeRuntime.isolation;
   if (isolation === "none") {
-    const name = ownValue<unknown>(context.codeRuntime, "name");
+    const name = context.codeRuntime.name;
     throw new Error(
       `Tack HTTP service refuses code runtime "${typeof name === "string" ? name : "unknown"}" because it has no isolation. ` +
       "Use the quickjs or workerd runtime for exposed services."
     );
   }
 
-  const limiter = createRateLimiter(normalizeRateLimit(ownValue<unknown>(options, "rateLimit")));
+  const limiter = createRateLimiter(normalizeRateLimit(ownField(options, "rateLimit")));
   return createServer((request, response) => {
     void handleRequest(context, limiter, request, response);
   });
@@ -110,8 +110,8 @@ export function listenTackHttpService(
   listen: TackHttpListenOptions = {}
 ): Promise<TackHttpServiceHandle> {
   const server = createTackHttpService(options);
-  const host = ownValue<string>(listen, "host") ?? "127.0.0.1";
-  const port = ownValue<number>(listen, "port") ?? 8787;
+  const host = ownField<string>(listen, "host") ?? "127.0.0.1";
+  const port = ownField<number>(listen, "port") ?? 8787;
 
   return new Promise((resolve, reject) => {
     server.once("error", reject);
@@ -207,29 +207,28 @@ async function handleRequest(
 }
 
 function normalizeServiceContext(options: CreateTackHttpServiceOptions): ServiceContext {
-  const policy = ownValue<OperationPolicy>(options, "policy");
-  const onAuditEvent = ownValue<CreateTackHttpServiceOptions["onAuditEvent"]>(options, "onAuditEvent");
+  const policy = ownField<OperationPolicy>(options, "policy");
+  const onAuditEvent = ownField<CreateTackHttpServiceOptions["onAuditEvent"]>(options, "onAuditEvent");
   return {
-    manifest: ownValue<TackManifest>(options, "manifest") as TackManifest,
-    runtime: ownValue<TackRuntime>(options, "runtime") as TackRuntime,
-    codeRuntime: ownValue<CodeRuntime>(options, "codeRuntime") as CodeRuntime,
+    manifest: ownField<TackManifest>(options, "manifest") as TackManifest,
+    runtime: ownField<TackRuntime>(options, "runtime") as TackRuntime,
+    codeRuntime: ownField<CodeRuntime>(options, "codeRuntime") as CodeRuntime,
     users: optionUsers(options).map(normalizeServiceUser),
     ...(policy ? { policy } : {}),
-    maxRequestBytes: ownValue<number>(options, "maxRequestBytes") ?? DEFAULT_MAX_REQUEST_BYTES,
+    maxRequestBytes: ownField<number>(options, "maxRequestBytes") ?? DEFAULT_MAX_REQUEST_BYTES,
     ...(onAuditEvent ? { onAuditEvent } : {})
   };
 }
 
 function normalizeServiceUser(user: ServiceUser): ServiceUserSnapshot {
-  const id = ownValue<unknown>(user, "id");
-  const token = ownValue<unknown>(user, "token");
-  const allowedOperations = ownStringArray(ownValue<unknown>(user, "allowedOperations"));
-  const deniedOperations = ownStringArray(ownValue<unknown>(user, "deniedOperations"));
+  const { id, token } = user;
+  const allowedOperations = stringArray(user.allowedOperations);
+  const deniedOperations = stringArray(user.deniedOperations);
   const policy = mergePolicy(undefined, {
     ...(allowedOperations ? { allowedOperations } : {}),
     ...(deniedOperations ? { deniedOperations } : {})
   });
-  const rateLimit = normalizeRateLimit(ownValue<unknown>(user, "rateLimit"));
+  const rateLimit = normalizeRateLimit(user.rateLimit);
   return {
     id: typeof id === "string" ? id : "",
     ...(typeof token === "string" ? { token } : {}),
@@ -315,19 +314,20 @@ function normalizeRateLimit(value: unknown): ServiceRateLimit | undefined {
     return undefined;
   }
 
-  const requests = ownValue<unknown>(value, "requests");
-  const windowMs = ownValue<unknown>(value, "windowMs");
+  const record = value as Record<string, unknown>;
+  const requests = record["requests"];
+  const windowMs = record["windowMs"];
   return typeof requests === "number" && typeof windowMs === "number"
     ? { requests, windowMs }
     : undefined;
 }
 
-function ownStringArray(value: unknown): readonly string[] | undefined {
+function stringArray(value: unknown): readonly string[] | undefined {
   if (!Array.isArray(value)) {
     return undefined;
   }
 
-  const strings = ownDataValues<unknown>(value).filter((entry): entry is string => typeof entry === "string");
+  const strings = value.filter((entry): entry is string => typeof entry === "string");
   return strings.length > 0 ? strings : undefined;
 }
 
@@ -355,7 +355,7 @@ function readString(input: unknown, key: string): string | undefined {
     return undefined;
   }
 
-  const value = ownValue<unknown>(input, key);
+  const value = (input as Record<string, unknown>)[key];
   return typeof value === "string" ? value : undefined;
 }
 
@@ -392,7 +392,7 @@ function readBody(request: IncomingMessage, maxBytes: number): Promise<unknown> 
 
       settled = true;
       try {
-        resolve(body.length > 0 ? JSON.parse(body) as unknown : {});
+        resolve(sanitizeData(body.length > 0 ? JSON.parse(body) as unknown : {}, {}));
       } catch (error) {
         reject(error);
       }
@@ -419,5 +419,6 @@ function closeServer(server: Server): Promise<void> {
 }
 
 function optionUsers(options: CreateTackHttpServiceOptions): ServiceUser[] {
-  return ownDataValues<ServiceUser>(ownValue<readonly ServiceUser[]>(options, "users"));
+  const users = sanitizeData(ownField(options, "users"), {});
+  return Array.isArray(users) ? (users as ServiceUser[]) : [];
 }

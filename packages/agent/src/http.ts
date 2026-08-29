@@ -4,8 +4,8 @@ import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import { createMcpHandler, type AuthInfo } from "@modelcontextprotocol/server";
 import {
-  ownDataValue as readOwnData,
-  ownDataValues,
+  ownField,
+  sanitizeData,
   type TackManifest,
   type TackRuntime
 } from "@tack/core";
@@ -76,13 +76,13 @@ export function listenTackMcpHttp(
 ): Promise<TackMcpHttpHandle> {
   const context = normalizeServeOptions(options);
 
-  const path = normalizePath(readOwnData(listen, "path") as string | undefined);
+  const path = normalizePath(ownField(listen, "path") as string | undefined);
   const handler = createHostedMcpHandler(context);
   const server = createServer((request, response) => {
     void handleNodeRequest(context, handler, path, request, response);
   });
-  const host = readOwnData(listen, "host") as string | undefined ?? DEFAULT_HOST;
-  const port = readOwnData(listen, "port") as number | undefined ?? DEFAULT_PORT;
+  const host = ownField(listen, "host") as string | undefined ?? DEFAULT_HOST;
+  const port = ownField(listen, "port") as number | undefined ?? DEFAULT_PORT;
 
   return new Promise((resolve, reject) => {
     server.once("error", reject);
@@ -121,17 +121,17 @@ function createHostedMcpHandler(context: HostedMcpContext): ReturnType<typeof cr
 }
 
 function normalizeServeOptions(options: ServeTackMcpHttpOptions): HostedMcpContext {
-  const manifest = readOwnData(options, "manifest") as TackManifest;
-  const runtime = readOwnData(options, "runtime") as TackRuntime;
-  const codeRuntime = readOwnData(options, "codeRuntime") as CodeRuntime;
-  const users = readOwnData(options, "users") as readonly HostedMcpUser[] | undefined;
-  const policy = readOwnData(options, "policy") as OperationPolicy | undefined;
-  const onAuditEvent = readOwnData(options, "onAuditEvent") as ServeTackMcpHttpOptions["onAuditEvent"];
+  const manifest = ownField(options, "manifest") as TackManifest;
+  const runtime = ownField(options, "runtime") as TackRuntime;
+  const codeRuntime = ownField(options, "codeRuntime") as CodeRuntime;
+  const users = sanitizeData(ownField(options, "users"), {}) as readonly HostedMcpUser[] | undefined;
+  const policy = ownField(options, "policy") as OperationPolicy | undefined;
+  const onAuditEvent = ownField(options, "onAuditEvent") as ServeTackMcpHttpOptions["onAuditEvent"];
   return {
     manifest,
     runtime,
     codeRuntime,
-    users: Array.isArray(users) ? ownDataValues<HostedMcpUser>(users).map(normalizeUser) : [],
+    users: Array.isArray(users) ? users.map(normalizeUser) : [],
     ...(policy ? { policy } : {}),
     ...(onAuditEvent ? { onAuditEvent } : {})
   };
@@ -252,10 +252,9 @@ function writeText(response: ServerResponse, status: number, text: string): void
 }
 
 function normalizeUser(user: HostedMcpUser): HostedMcpUserSnapshot {
-  const id = readOwnData(user, "id");
-  const token = readOwnData(user, "token");
-  const allowedOperations = ownStringArray(readOwnData(user, "allowedOperations"));
-  const deniedOperations = ownStringArray(readOwnData(user, "deniedOperations"));
+  const { id, token } = user;
+  const allowedOperations = stringArray(user.allowedOperations);
+  const deniedOperations = stringArray(user.deniedOperations);
   const policy = mergePolicy(undefined, {
     ...(allowedOperations ? { allowedOperations } : {}),
     ...(deniedOperations ? { deniedOperations } : {})
@@ -344,12 +343,12 @@ function mergePolicy(
   return base ?? user;
 }
 
-function ownStringArray(value: unknown): readonly string[] | undefined {
+function stringArray(value: unknown): readonly string[] | undefined {
   if (!Array.isArray(value)) {
     return undefined;
   }
 
-  const strings = ownDataValues<unknown>(value).filter((entry): entry is string => typeof entry === "string");
+  const strings = value.filter((entry): entry is string => typeof entry === "string");
   return strings.length > 0 ? strings : undefined;
 }
 
