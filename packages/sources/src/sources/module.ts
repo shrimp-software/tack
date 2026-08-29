@@ -1,4 +1,4 @@
-import type { DiscoveredServer } from "@tack/core";
+import { moduleSourceKind, type DiscoveredServer } from "@tack/core";
 
 import { discoverModuleSource } from "../module/discover.js";
 import { createModuleRuntime } from "../module/runtime.js";
@@ -9,7 +9,7 @@ import type { Source, SourceServerEntry } from "../source.js";
  * Adapter only — the implementation lives in `../module/`.
  */
 export const moduleSource: Source = {
-  transports: ["module"],
+  kinds: [moduleSourceKind],
   discover: (entries) => Promise.all(entries.flatMap(discoverEntry)),
   createRuntime: (input) => createModuleRuntime(input)
 };

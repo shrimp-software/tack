@@ -1,9 +1,9 @@
 import {
   buildManifest,
   TackRuntimeError,
+  type SourceKind,
   type TackConfig,
   type TackManifest,
-  type TackManifestServer,
   type TackResult,
   type TackRuntime,
   type TackTool
@@ -11,13 +11,17 @@ import {
 
 import { mcpSource } from "./sources/mcp.js";
 import { moduleSource } from "./sources/module.js";
-import type { Source, SourceServerEntry } from "./source.js";
+import { sourceTransports, type Source, type SourceServerEntry } from "./source.js";
 
-/** Every source kind the dispatcher knows. Add a new kind here — nothing else changes. */
+/** Every source the dispatcher knows. Add a new one here — nothing else changes. */
 const SOURCES: readonly Source[] = [mcpSource, moduleSource];
 
-const SOURCE_BY_TRANSPORT: ReadonlyMap<TackManifestServer["transport"], Source> = new Map(
-  SOURCES.flatMap((source) => source.transports.map((transport) => [transport, source] as const))
+/** The `@tack/core` source kinds behind {@link SOURCES}, for registry-driven
+ *  config parsing and manifest projection. */
+export const SOURCE_KINDS: readonly SourceKind[] = SOURCES.flatMap((source) => source.kinds);
+
+const SOURCE_BY_TRANSPORT: ReadonlyMap<string, Source> = new Map(
+  SOURCES.flatMap((source) => sourceTransports(source).map((transport) => [transport, source] as const))
 );
 
 /**
@@ -27,11 +31,12 @@ const SOURCE_BY_TRANSPORT: ReadonlyMap<TackManifestServer["transport"], Source> 
 export async function discoverManifest(config: TackConfig): Promise<TackManifest> {
   const entries: readonly SourceServerEntry[] = Object.entries(config.servers);
   const discovered = await Promise.all(
-    SOURCES.map((source) =>
-      source.discover(entries.filter(([, server]) => source.transports.includes(server.transport)))
-    )
+    SOURCES.map((source) => {
+      const owned = new Set(sourceTransports(source));
+      return source.discover(entries.filter(([, server]) => owned.has(server.transport)));
+    })
   );
-  return buildManifest(config, discovered.flat());
+  return buildManifest(config, discovered.flat(), undefined, SOURCE_KINDS);
 }
 
 export interface CreateRuntimeOptions {

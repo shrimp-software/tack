@@ -7,4 +7,6 @@ export * from "./operations.js";
 export * from "./own-data.js";
 export * from "./result.js";
 export * from "./schema-data.js";
+export * from "./source-kind.js";
+export * from "./source-kinds/index.js";
 export * from "./types.js";

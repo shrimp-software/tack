@@ -8,8 +8,11 @@ export type {
 } from "./define.js";
 
 // Integration API — discover every configured source and run its tools.
-export { createRuntime, discoverManifest } from "./dispatch.js";
+export { createRuntime, discoverManifest, SOURCE_KINDS } from "./dispatch.js";
 export type { CreateRuntimeOptions } from "./dispatch.js";
 
-// Extension point — implement this to add a source kind.
+// Extension point — implement `Source` (discover + run) and pair it with a
+// `SourceKind` from `@tack/core` (config shape + manifest projection).
+export { sourceTransports } from "./source.js";
 export type { Source, SourceRuntimeInput, SourceServerEntry } from "./source.js";
+export type { SourceKind } from "@tack/core";

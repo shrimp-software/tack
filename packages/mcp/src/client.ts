@@ -125,13 +125,9 @@ export function normalizeServerConfig(serverConfig: TackConfig["servers"][string
     };
   }
 
-  if (transport === "module") {
-    throw new TackRuntimeError({
-      message: "Module sources have no MCP connection; they run through the module runtime"
-    });
-  }
-
-  throw new TackRuntimeError({ message: "Invalid MCP server config: missing transport" });
+  throw new TackRuntimeError({
+    message: `Not an MCP transport: ${typeof transport === "string" ? transport : "missing"}`
+  });
 }
 
 async function openStdioConnection(

@@ -21,6 +21,13 @@ export interface ModuleServerConfig {
   readonly entry: string;
 }
 
+/**
+ * One configured tool source. A first-party source kind adds its config
+ * interface + one arm here (and any new fields on {@link TackManifestServer}),
+ * then a `SourceKind` in `./source-kinds/` — TypeScript unions are static, so
+ * this is the one type edit. Everything else (parsing, manifest projection,
+ * path anchoring) is registry-driven off the `SourceKind`.
+ */
 export type TackServerConfig = StdioServerConfig | HttpServerConfig | ModuleServerConfig;
 
 export interface TackConfig {
