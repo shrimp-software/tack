@@ -16,9 +16,21 @@ export function createExecuteDescription(
   policy?: OperationPolicy | undefined
 ): string {
   const lines = [
-    "Run TypeScript in Tack's sandboxed runtime.",
+    "Run TypeScript in Tack's sandboxed runtime. Scope persists across `execute` calls —",
+    "fetch once, refine over cells; `{ fresh: true }` starts a clean scope.",
     "",
-    'Before writing code, call `guide({ name: "execute" })` for the workflow on how to use this tool.'
+    "1. `tools.search({ query: \"\" })` lists namespaces; `({ query: \"\", namespace })` lists its",
+    "   operations; `({ query })` keyword-searches. Items carry `params` (required input keys).",
+    "2. `tools.describe.tool({ path })` for the full input schema when `params` isn't enough",
+    "   (`{ types: true }` adds TypeScript defs).",
+    "3. Call via `tools.call(path, args)` or `tools.<namespace>.<...>(args)`. Await calls. Don't",
+    "   pass discriminator fields Tack already injects.",
+    "4. `emit(value)` is user-visible output; `return value` is the model-readable final result.",
+    "",
+    "A large value comes back as `{ __tackRef: \"$1\", type, preview }` — use `$1` / `$_` in the",
+    "next cell, or `deref({ session, ref })` (the `session` id is in each result).",
+    "",
+    'Call `guide({ name: "execute" })` for file outputs, limits, and more detail.'
   ];
   const inventory = renderNamespaceInventory(manifest, policy);
   if (inventory.length > 0) {

@@ -87,9 +87,7 @@ export function createTackAgentServer(
     return sessions.get(defaultSessionId);
   };
 
-  const executeDescription = sessionsSupported
-    ? `${engine.getDescription()}\n\nScope persists across \`execute\` calls automatically — fetch once, refine over several cells. Pass \`fresh: true\` to start a clean scope. The \`session\` id is returned with each result for \`deref\`.`
-    : engine.getDescription();
+  const executeDescription = engine.getDescription();
 
   server.registerTool(
     "execute",
