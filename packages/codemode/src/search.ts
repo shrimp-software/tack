@@ -1,6 +1,7 @@
 import {
   listOperations,
   ownField,
+  type JsonSchema,
   type TackManifest,
   type TackOperation
 } from "@tack/core";
@@ -17,6 +18,9 @@ export interface SearchItem {
   /** `namespace.path.to.op` — `namespace` and the leaf id are read off this. */
   readonly path: string;
   readonly description?: string | undefined;
+  /** Required input keys. Absent means the operation takes no required args, so
+   *  you can often call it directly without `describe.tool`. */
+  readonly params?: readonly string[] | undefined;
   readonly example: string;
   /** Present only on a keyword search — why this operation matched. */
   readonly score?: number | undefined;
@@ -138,12 +142,22 @@ function toSearchItem(
   score: number,
   matchedTokens: readonly string[]
 ): SearchItem {
+  const params = requiredParams(operation.inputSchema);
   return {
     path: operation.fullPathString,
     ...(operation.description ? { description: operation.description } : {}),
+    ...(params.length > 0 ? { params } : {}),
     example: operation.examples[0] ?? "",
     ...(score > 0 ? { score, matchedTokens } : {})
   };
+}
+
+/** Top-level `required` property names of an operation's input schema. */
+function requiredParams(schema: JsonSchema): readonly string[] {
+  const required = (schema as { readonly required?: unknown }).required;
+  return Array.isArray(required)
+    ? required.filter((key): key is string => typeof key === "string")
+    : [];
 }
 
 function scoreOperation(

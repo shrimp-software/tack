@@ -16,7 +16,7 @@ import {
   type CodeRuntime,
   type OperationPolicy
 } from "../src/index.js";
-import { listOperations, type TackManifest } from "@tack/core";
+import { buildManifest, listOperations, type TackManifest } from "@tack/core";
 
 describe("codemode operation helpers", () => {
   it("renders short execute descriptions and long execute guide docs from the manifest", () => {
@@ -60,6 +60,32 @@ describe("codemode operation helpers", () => {
       examples: ["await tools.grafana.alerting.rules.list()"]
     });
     expect("inputTypeScript" in described && described.inputTypeScript).toContain("rule_uid");
+  });
+
+  it("carries required input keys as `params` so simple tools skip describe.tool", () => {
+    const manifest = buildManifest(
+      { servers: { api: { transport: "stdio", command: "x" } } },
+      [{
+        serverId: "api",
+        tools: [
+          {
+            name: "get_thing",
+            description: "Fetch a thing.",
+            inputSchema: {
+              type: "object",
+              properties: { id: { type: "string" }, verbose: { type: "boolean" } },
+              required: ["id"]
+            }
+          },
+          { name: "ping", description: "No args.", inputSchema: { type: "object" } }
+        ]
+      }],
+      new Date("2026-07-23T00:00:00.000Z")
+    );
+
+    const items = searchOperations(manifest, { query: "", namespace: "api" }).items;
+    expect(items.find((item) => item.path === "api.thing.get")).toMatchObject({ params: ["id"] });
+    expect(items.find((item) => item.path === "api.ping")).not.toHaveProperty("params");
   });
 
   it("searches with inferred paths, fuzzy matches, schema terms, and namespace filters", () => {
