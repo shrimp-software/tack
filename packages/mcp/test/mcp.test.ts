@@ -436,6 +436,19 @@ describe("MCP adapter", () => {
     }
   });
 
+  it("surfaces a downstream tools/call failure", async () => {
+    const server = await startFakeHttpMcpServer();
+    const config: TackConfig = { servers: { remote: { transport: "http", url: server.url, headers: { authorization: "Bearer server-token" } } } };
+    const manifest = await discoverMcpManifestPromise(config);
+    const runtime = await createMcpRuntime({ config, manifest });
+    try {
+      await expect(runtime.invoke("remote.echo", { message: "fail" })).rejects.toThrow("downstream exploded");
+    } finally {
+      await runtime.close();
+      await server.close();
+    }
+  });
+
   it("normalizes invocation arguments to own enumerable data properties", async () => {
     const config: TackConfig = {
       servers: {
@@ -1043,6 +1056,10 @@ async function handleFakeHttpMcpRequest(
     const params = message.params;
     if (request.headers["mcp-name"] !== params?.name) {
       writeJson(response, 400, { jsonrpc: "2.0", id: message.id, error: { code: -32020, message: "tool header mismatch" } });
+      return;
+    }
+    if (params?.name === "echo" && params.arguments?.message === "fail") {
+      writeJson(response, 200, { jsonrpc: "2.0", id: message.id, error: { code: -32000, message: "downstream exploded" } });
       return;
     }
     if (params?.name === "add") {

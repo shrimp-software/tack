@@ -120,7 +120,7 @@ export async function createMcpToolRuntime(
         return createTackResult<TStructured>(raw);
       } catch (cause) {
         throw new TackRuntimeError({
-          message: `Failed to call MCP tool ${toolId}`,
+          message: `Failed to call MCP tool ${toolId}: ${errorMessage(cause)}`,
           toolId,
           serverId: binding.serverId,
           cause
@@ -256,6 +256,10 @@ async function discoverServer(
       cause
     });
   }
+}
+
+function errorMessage(cause: unknown): string {
+  return cause instanceof Error ? cause.message : String(cause);
 }
 
 function toDiscoveredTool(tool: unknown): DiscoveredTool[] {
