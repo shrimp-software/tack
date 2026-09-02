@@ -19,6 +19,7 @@
   "dependencies": {
     "@tack/core": "workspace:*",
     "@tack/mcp": "workspace:*",
+    "@tack/plugin": "workspace:*",
     "zod": "^4.4.3"
   },
   "devDependencies": {

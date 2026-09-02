@@ -1,10 +1,12 @@
 import type { SourceKind } from "../source-kind.js";
 import { httpSourceKind } from "./http.js";
 import { moduleSourceKind } from "./module.js";
+import { pluginSourceKind } from "./plugin.js";
 import { stdioSourceKind } from "./stdio.js";
 
 export { httpSourceKind } from "./http.js";
 export { moduleSourceKind } from "./module.js";
+export { pluginSourceKind } from "./plugin.js";
 export { stdioSourceKind } from "./stdio.js";
 
 /**
@@ -15,5 +17,6 @@ export { stdioSourceKind } from "./stdio.js";
 export const BUILTIN_SOURCE_KINDS: readonly SourceKind[] = [
   stdioSourceKind,
   httpSourceKind,
-  moduleSourceKind
+  moduleSourceKind,
+  pluginSourceKind
 ];

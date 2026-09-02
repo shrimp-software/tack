@@ -9,13 +9,30 @@ import {
   type TackTool,
   type Transport
 } from "@tack/core";
+import { resolvePluginsIntoConfig } from "@tack/plugin";
 
 import { mcpSource } from "./sources/mcp.js";
 import { moduleSource } from "./sources/module.js";
+import { pluginSource } from "./sources/plugin.js";
 import { sourceTransports, type Source, type SourceServerEntry } from "./source.js";
 
 /** Every source the dispatcher knows. Add a new one here — nothing else changes. */
-const SOURCES: readonly Source[] = [mcpSource, moduleSource];
+const SOURCES: readonly Source[] = [mcpSource, moduleSource, pluginSource];
+
+/** Options shared by {@link discoverManifest} and {@link createRuntime}. */
+export interface WorkspaceOptions {
+  /**
+   * Directory the config file lives in — anchors local plugin `path`s and the
+   * `tack.plugins.lock` lockfile. Defaults to the process working directory.
+   */
+  readonly configDir?: string | undefined;
+}
+
+function prepareConfig(config: TackConfig, options?: WorkspaceOptions): Promise<TackConfig> {
+  // Expand the top-level `plugins` block into synthetic `plugin` sources.
+  // No-op (and cheap) when there is no `plugins` key — safe to call repeatedly.
+  return resolvePluginsIntoConfig(config, { configDir: options?.configDir ?? process.cwd() });
+}
 
 /** The `@tack/core` source kinds behind {@link SOURCES}, for registry-driven
  *  config parsing and manifest projection. */
@@ -29,18 +46,22 @@ const SOURCE_BY_TRANSPORT: ReadonlyMap<Transport, Source> = new Map(
  * Discover every configured source and fold the results into one manifest with a
  * single {@link buildManifest} pass.
  */
-export async function discoverManifest(config: TackConfig): Promise<TackManifest> {
-  const entries: readonly SourceServerEntry[] = Object.entries(config.servers);
+export async function discoverManifest(
+  config: TackConfig,
+  options?: WorkspaceOptions
+): Promise<TackManifest> {
+  const prepared = await prepareConfig(config, options);
+  const entries: readonly SourceServerEntry[] = Object.entries(prepared.servers);
   const discovered = await Promise.all(
     SOURCES.map((source) => {
       const owned = new Set(sourceTransports(source));
       return source.discover(entries.filter(([, server]) => owned.has(server.transport)));
     })
   );
-  return buildManifest(config, discovered.flat(), undefined, SOURCE_KINDS);
+  return buildManifest(prepared, discovered.flat(), undefined, SOURCE_KINDS);
 }
 
-export interface CreateRuntimeOptions {
+export interface CreateRuntimeOptions extends WorkspaceOptions {
   readonly config: TackConfig;
   readonly manifest: TackManifest;
 }
@@ -49,13 +70,15 @@ export interface CreateRuntimeOptions {
  * Build one {@link TackRuntime} that routes each `invoke` to the source that owns
  * the tool's transport.
  */
-export async function createRuntime({ config, manifest }: CreateRuntimeOptions): Promise<TackRuntime> {
+export async function createRuntime({ config, manifest, configDir }: CreateRuntimeOptions): Promise<TackRuntime> {
+  const preparedConfig = await prepareConfig(config, { configDir });
   const toolsBySource = groupToolsBySource(manifest);
 
   const runtimeBySource = new Map(
     await Promise.all(
       [...toolsBySource].map(
-        async ([source, tools]) => [source, await source.createRuntime({ config, tools })] as const
+        async ([source, tools]) =>
+          [source, await source.createRuntime({ config: preparedConfig, tools })] as const
       )
     )
   );

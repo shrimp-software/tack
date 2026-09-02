@@ -5,6 +5,7 @@ import { isAbsolute, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import {
+  assignOperationTypeNames,
   buildManifest,
   createTackResult,
   createDefaultConfig,
@@ -15,7 +16,9 @@ import {
   parseConfig,
   listOperations,
   operationArgs,
+  operationTypeBase,
   sanitizeId,
+  typeSegment,
   TackConfigError,
   TackGeneratorError,
   TackIoError,
@@ -719,6 +722,165 @@ describe("ids", () => {
     } as unknown as TackOperation;
 
     expect(operationArgs(operation, { keep: "safe" })).toEqual({ keep: "safe" });
+  });
+});
+
+describe("explicit operation paths", () => {
+  function manifestWithExplicitPath(
+    path: readonly string[] | undefined,
+    inputSchema: JsonSchema = { type: "object", additionalProperties: false }
+  ): TackManifest {
+    const config: TackConfig = { servers: { acme: { transport: "plugin", path: "/acme" } } };
+    const discovered: DiscoveredServer[] = [
+      {
+        serverId: "acme",
+        tools: [{ name: "review", inputSchema, ...(path ? { path } : {}) }] as DiscoveredTool[]
+      }
+    ];
+    return buildManifest(config, discovered, new Date("2026-07-23T00:00:00.000Z"));
+  }
+
+  it("carries a DiscoveredTool.path through to the manifest tool", () => {
+    const manifest = manifestWithExplicitPath(["mcp", "gh", "listIssues"]);
+    expect(manifest.tools["acme.review"]?.path).toEqual(["mcp", "gh", "listIssues"]);
+  });
+
+  it("ignores an empty path and infers instead", () => {
+    const manifest = manifestWithExplicitPath([]);
+    expect(manifest.tools["acme.review"]?.path).toBeUndefined();
+    expect(listOperations(manifest)[0]?.pathString).toBe("review");
+  });
+
+  it("falls back to inference for a path with an empty segment", () => {
+    const manifest = manifestWithExplicitPath(["ok", ""] as unknown as string[]);
+    expect(listOperations(manifest)[0]?.pathString).toBe("review");
+  });
+
+  it("plans exactly one operation at the explicit path, with no discriminator split", () => {
+    const manifest = manifestWithExplicitPath(["mcp", "gh", "rules"], {
+      type: "object",
+      properties: { operation: { type: "string", enum: ["list", "get"] } },
+      required: ["operation"],
+      additionalProperties: false
+    });
+
+    const operations = listOperations(manifest);
+    expect(operations).toHaveLength(1);
+    expect(operations[0]).toMatchObject({
+      pathString: "mcp.gh.rules",
+      fullPathString: "acme.mcp.gh.rules",
+      toolId: "acme.review"
+    });
+    expect(operations[0]?.injectedArgs).toBeUndefined();
+    expect(operations[0]?.inputSchema).toMatchObject({ required: ["operation"] });
+  });
+
+  it("keeps overlapping explicit paths distinct via uniquePath", () => {
+    const config: TackConfig = { servers: { acme: { transport: "plugin", path: "/acme" } } };
+    const manifest = buildManifest(
+      config,
+      [
+        {
+          serverId: "acme",
+          tools: [
+            { name: "a", inputSchema: { type: "object" }, path: ["mcp"] },
+            { name: "b", inputSchema: { type: "object" }, path: ["mcp", "srv", "echo"] }
+          ] as DiscoveredTool[]
+        }
+      ],
+      new Date("2026-07-23T00:00:00.000Z")
+    );
+
+    const paths = listOperations(manifest).map((operation) => operation.fullPathString);
+    expect(paths).toHaveLength(2);
+    expect(new Set(paths).size).toBe(2);
+  });
+
+  it("reserves the code-mode root API names as namespaces", () => {
+    const config: TackConfig = {
+      servers: { search: { transport: "stdio", command: "x" } }
+    };
+    const manifest = buildManifest(
+      config,
+      [{ serverId: "search", tools: [{ name: "run", inputSchema: { type: "object" } }] }],
+      new Date("2026-07-23T00:00:00.000Z")
+    );
+    expect(manifest.tools["search.run"]?.namespaceName).not.toBe("search");
+  });
+});
+
+describe("operation type names", () => {
+  it("PascalCases a segment and guards a non-identifier lead", () => {
+    expect(typeSegment("list datasources")).toBe("ListDatasources");
+    expect(typeSegment("2fa")).toBe("_2Fa");
+    expect(typeSegment("")).toBe("_Item");
+  });
+
+  it("builds the type base from namespace + path", () => {
+    const config: TackConfig = {
+      servers: { grafana: { transport: "stdio", command: "grafana-mcp" } }
+    };
+    const manifest = buildManifest(
+      config,
+      [
+        {
+          serverId: "grafana",
+          tools: [{ name: "list_datasources", inputSchema: { type: "object" } }]
+        }
+      ],
+      new Date("2026-07-23T00:00:00.000Z")
+    );
+    const [operation] = listOperations(manifest);
+    expect(operationTypeBase(operation!)).toBe("GrafanaDatasourcesList");
+  });
+
+  it("dedupes colliding type bases deterministically, independent of input order", () => {
+    const config: TackConfig = {
+      servers: { fake: { transport: "stdio", command: "fake" } }
+    };
+    // `a_b` (path a.b) and `a.b` upstream name both PascalCase to `FakeAB`.
+    const manifest = buildManifest(
+      config,
+      [
+        {
+          serverId: "fake",
+          tools: [
+            { name: "a_b", inputSchema: { type: "object" } },
+            { name: "aB", inputSchema: { type: "object" } }
+          ]
+        }
+      ],
+      new Date("2026-07-23T00:00:00.000Z")
+    );
+    const operations = listOperations(manifest);
+    const forward = assignOperationTypeNames(operations);
+    const reversed = assignOperationTypeNames([...operations].reverse());
+
+    const bases = [...forward.values()].map((names) => names.inputType).sort();
+    expect(bases).toEqual(["FakeAB2Input", "FakeABInput"]);
+    expect([...reversed.entries()]).toEqual([...forward.entries()]);
+  });
+
+  it("suffixes Input / Output / Result off one base", () => {
+    const config: TackConfig = {
+      servers: { grafana: { transport: "stdio", command: "grafana-mcp" } }
+    };
+    const manifest = buildManifest(
+      config,
+      [
+        {
+          serverId: "grafana",
+          tools: [{ name: "list_datasources", inputSchema: { type: "object" } }]
+        }
+      ],
+      new Date("2026-07-23T00:00:00.000Z")
+    );
+    const [operation] = listOperations(manifest);
+    expect(assignOperationTypeNames(listOperations(manifest)).get(operation!.fullPathString)).toEqual({
+      inputType: "GrafanaDatasourcesListInput",
+      outputType: "GrafanaDatasourcesListOutput",
+      resultType: "GrafanaDatasourcesListResult"
+    });
   });
 });
 

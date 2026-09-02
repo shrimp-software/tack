@@ -10,6 +10,7 @@ import {
   formatTraceLine,
   isOperationAllowed,
   isTackRef,
+  attachTypeScript,
   normalizeDescribeToolInput,
   normalizeSearchInput,
   searchOperations,
@@ -35,6 +36,7 @@ describe("codemode operation helpers", () => {
     expect(guide?.body).toContain("__tackRef");
     expect(guide?.body).toContain("ToolFile");
     expect(guide?.body).toContain("## Available namespaces");
+    expect(guide?.body).toContain("search({ namespace, types: true })");
     expect(findGuide("nope", grafanaManifest())).toBeUndefined();
   });
 
@@ -60,6 +62,30 @@ describe("codemode operation helpers", () => {
       examples: ["await tools.grafana.alerting.rules.list()"]
     });
     expect("inputTypeScript" in described && described.inputTypeScript).toContain("rule_uid");
+  });
+
+  it("attaches per-tool TypeScript for search({ namespace, types: true })", async () => {
+    const manifest = grafanaManifest();
+    const base = searchOperations(manifest, { query: "", namespace: "grafana", types: true });
+    // plain searchOperations never compiles types itself
+    expect(base.items.every((item) => !("inputTypeScript" in item))).toBe(true);
+
+    const typed = await attachTypeScript(base, manifest);
+    expect(typed.items).toHaveLength(base.items.length);
+    for (const item of typed.items) {
+      expect(typeof item.inputTypeScript).toBe("string");
+      expect(item.inputTypeScript).toMatch(/export (interface|type) \w+Input/);
+    }
+    const rulesList = typed.items.find((item) => item.path === "grafana.alerting.rules.list");
+    expect(rulesList?.inputTypeScript).toContain("rule_uid");
+    // the injected discriminator is not part of the input type
+    expect(rulesList?.inputTypeScript).not.toContain("operation");
+  });
+
+  it("normalizeSearchInput only keeps types when explicitly true", () => {
+    expect(normalizeSearchInput({ namespace: "x", types: true })).toMatchObject({ types: true });
+    expect(normalizeSearchInput({ namespace: "x" })).not.toHaveProperty("types");
+    expect(normalizeSearchInput({ namespace: "x", types: "yes" })).not.toHaveProperty("types");
   });
 
   it("carries required input keys as `params` so simple tools skip describe.tool", () => {
@@ -846,5 +872,150 @@ describe("execution engine live trace", () => {
       "→ grafana.datasources.list",
       expect.stringMatching(/^← grafana\.datasources\.list ok/)
     ]);
+  });
+});
+
+describe("execution engine typecheck", () => {
+  const oneDiagnostic = [
+    { line: 1, column: 5, code: "TS2304", message: "Cannot find name 'x'.", category: "error" as const }
+  ];
+
+  /** A code runtime that records whether it was ever asked to run. */
+  function recordingRuntime(): { runtime: CodeRuntime; ran: () => boolean } {
+    let ran = false;
+    return {
+      ran: () => ran,
+      runtime: {
+        name: "test",
+        isolation: "none",
+        execute: async (input) => {
+          ran = true;
+          await input.invoker.invoke({ path: "grafana.datasources.list", args: {} });
+          return { ok: true, result: "ran", emitted: [], logs: [] };
+        }
+      }
+    };
+  }
+
+  function fakeChecker(outcome: {
+    diagnostics?: typeof oneDiagnostic;
+    skipped?: boolean;
+    onCall?: (code: string, ctx?: { scopeNames?: readonly string[] }) => void;
+  }) {
+    let calls = 0;
+    return {
+      calls: () => calls,
+      checker: {
+        check: async (code: string, ctx?: { scopeNames?: readonly string[] }) => {
+          calls += 1;
+          outcome.onCall?.(code, ctx);
+          return {
+            diagnostics: outcome.diagnostics ?? [],
+            ...(outcome.skipped ? { skipped: true, skipReason: "forced" } : {})
+          };
+        }
+      }
+    };
+  }
+
+  it("blocks execution on a diagnostic in error mode — nothing upstream runs", async () => {
+    const calls: Array<{ toolId: string; args: unknown }> = [];
+    const { runtime, ran } = recordingRuntime();
+    const fc = fakeChecker({ diagnostics: oneDiagnostic });
+    const engine = createExecutionEngine({
+      manifest: grafanaManifest(),
+      runtime: fakeRuntime(calls),
+      codeRuntime: runtime,
+      typecheck: { checker: fc.checker, mode: "error" }
+    });
+
+    const result = await engine.execute("return x;");
+
+    expect(result.ok).toBe(false);
+    expect(result.error?.phase).toBe("typecheck");
+    expect(result.error?.message).toContain("TS2304");
+    expect(result.typeDiagnostics).toEqual(oneDiagnostic);
+    expect(ran()).toBe(false);
+    expect(calls).toEqual([]);
+  });
+
+  it("runs and attaches diagnostics in warn mode", async () => {
+    const calls: Array<{ toolId: string; args: unknown }> = [];
+    const { runtime, ran } = recordingRuntime();
+    const fc = fakeChecker({ diagnostics: oneDiagnostic });
+    const engine = createExecutionEngine({
+      manifest: grafanaManifest(),
+      runtime: fakeRuntime(calls),
+      codeRuntime: runtime,
+      typecheck: { checker: fc.checker, mode: "warn" }
+    });
+
+    const result = await engine.execute("return x;");
+
+    expect(result.ok).toBe(true);
+    expect(result.result).toBe("ran");
+    expect(result.typeDiagnostics).toEqual(oneDiagnostic);
+    expect(ran()).toBe(true);
+    expect(calls).toHaveLength(1);
+  });
+
+  it("runs normally when the checker skips", async () => {
+    const { runtime, ran } = recordingRuntime();
+    const fc = fakeChecker({ diagnostics: oneDiagnostic, skipped: true });
+    const engine = createExecutionEngine({
+      manifest: grafanaManifest(),
+      runtime: fakeRuntime([]),
+      codeRuntime: runtime,
+      typecheck: { checker: fc.checker, mode: "error" }
+    });
+
+    const result = await engine.execute("return x;");
+
+    expect(result.ok).toBe(true);
+    expect(result.typeDiagnostics).toBeUndefined();
+    expect(ran()).toBe(true);
+  });
+
+  it("skips the checker entirely for a per-call typecheck: off", async () => {
+    const { runtime } = recordingRuntime();
+    const fc = fakeChecker({ diagnostics: oneDiagnostic });
+    const engine = createExecutionEngine({
+      manifest: grafanaManifest(),
+      runtime: fakeRuntime([]),
+      codeRuntime: runtime,
+      typecheck: { checker: fc.checker, mode: "error" }
+    });
+
+    const result = await engine.execute("return x;", { typecheck: "off" });
+
+    expect(result.ok).toBe(true);
+    expect(fc.calls()).toBe(0);
+  });
+
+  it("passes session scope names to the checker", async () => {
+    let seenCtx: { scopeNames?: readonly string[] } | undefined;
+    const fc = fakeChecker({ onCall: (_code, ctx) => { seenCtx = ctx; } });
+    const codeRuntime: CodeRuntime = {
+      name: "test",
+      isolation: "none",
+      execute: async () => ({ ok: true, result: "x", emitted: [], logs: [] }),
+      createSession: async () => ({
+        exec: async () => ({ ok: true, result: "cell", emitted: [], logs: [] }),
+        scope: () => ({ names: ["prev", "$1"] }),
+        close: async () => {}
+      })
+    };
+    const engine = createExecutionEngine({
+      manifest: grafanaManifest(),
+      runtime: fakeRuntime([]),
+      codeRuntime,
+      typecheck: { checker: fc.checker, mode: "warn" }
+    });
+
+    const session = await engine.createSession();
+    await session.exec("return prev;");
+
+    expect(seenCtx).toEqual({ scopeNames: ["prev", "$1"] });
+    expect(session.scope().names).toEqual(["prev", "$1"]);
   });
 });

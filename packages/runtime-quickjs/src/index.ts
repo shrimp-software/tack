@@ -556,6 +556,9 @@ async function createQuickJSSession(
         limit: Math.max(1, Math.trunc(derefOptions?.limit ?? DEREF_DEFAULT_LIMIT))
       });
     },
+    // Bindings and `$N`/`$_` ref identifiers from earlier cells — the
+    // typechecker declares these so a later cell isn't flagged for using them.
+    scope: () => ({ names: [...declaredNames] }),
     close: async () => {
       if (closed) {
         return;

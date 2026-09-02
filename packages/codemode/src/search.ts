@@ -1,10 +1,13 @@
 import {
+  findOperation,
   listOperations,
   ownField,
   type JsonSchema,
   type TackManifest,
   type TackOperation
 } from "@tack/core";
+
+import { operationTypeScript } from "./operation-typescript.js";
 import { filterAllowedOperations, type OperationPolicy } from "./policy.js";
 
 export interface SearchInput {
@@ -12,6 +15,10 @@ export interface SearchInput {
   readonly namespace?: string | undefined;
   readonly limit?: number | undefined;
   readonly offset?: number | undefined;
+  /** With a `namespace` set, attach `inputTypeScript`/`outputTypeScript` to each
+   *  item — full types for one namespace without a `describe.tool` per tool.
+   *  Ignored without a `namespace` (never compiles the whole catalog). */
+  readonly types?: boolean | undefined;
 }
 
 export interface SearchItem {
@@ -25,6 +32,9 @@ export interface SearchItem {
   /** Present only on a keyword search — why this operation matched. */
   readonly score?: number | undefined;
   readonly matchedTokens?: readonly string[] | undefined;
+  /** Present only on `search({ namespace, types: true })`. */
+  readonly inputTypeScript?: string | undefined;
+  readonly outputTypeScript?: string | undefined;
 }
 
 export interface SearchResult {
@@ -125,15 +135,45 @@ export function normalizeSearchInput(input: unknown): SearchInput {
     const namespace = ownField<unknown>(input, "namespace");
     const limit = ownField<unknown>(input, "limit");
     const offset = ownField<unknown>(input, "offset");
+    const types = ownField<unknown>(input, "types");
     return {
       query: typeof query === "string" ? query : "",
       ...(typeof namespace === "string" ? { namespace } : {}),
       ...(typeof limit === "number" ? { limit } : {}),
-      ...(typeof offset === "number" ? { offset } : {})
+      ...(typeof offset === "number" ? { offset } : {}),
+      ...(types === true ? { types: true } : {})
     };
   }
 
   return { query: "" };
+}
+
+/**
+ * Attach `inputTypeScript`/`outputTypeScript` to each item of a search result.
+ * Used for `search({ namespace, types: true })`. The caller is responsible for
+ * only invoking this when a `namespace` narrowed the result — it compiles one
+ * schema pair per item.
+ */
+export async function attachTypeScript(
+  result: SearchResult,
+  manifest: TackManifest
+): Promise<SearchResult> {
+  const items = await Promise.all(
+    result.items.map(async (item) => {
+      const operation = findOperation(manifest, item.path);
+      if (!operation) {
+        return item;
+      }
+      const { inputTypeScript, outputTypeScript } = await operationTypeScript(operation);
+      return {
+        ...item,
+        inputTypeScript,
+        ...(outputTypeScript ? { outputTypeScript } : {})
+      };
+    })
+  );
+
+  return { ...result, items };
 }
 
 

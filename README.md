@@ -83,17 +83,6 @@ Minimal config:
 Use `"runtime": { "type": "workerd" }` to switch code-mode execution to workerd. Operation paths are inferred from MCP tool names and discriminator schemas.
 The `service` block is only needed for bearer-protected `host` or for `serve`.
 
-Add a `delegate` block to expose the `delegate` tool: one call that has an LLM write a
-single complete code-mode program for a prose goal, runs it in the sandbox, and re-plans
-on failure. It needs an API key (default env `ANTHROPIC_API_KEY`); the tool is skipped if
-the key is unset.
-
-```json
-{
-  "delegate": { "model": "claude-sonnet-5", "apiKeyEnv": "ANTHROPIC_API_KEY", "replans": 1 }
-}
-```
-
 ## Sources
 
 Every `servers` entry is a **source**. Two transports are supported:

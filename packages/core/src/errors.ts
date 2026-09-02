@@ -77,11 +77,31 @@ export class TackGeneratorError extends Error {
   }
 }
 
+export class TackPluginError extends Error {
+  readonly _tag = "TackPluginError";
+  readonly pluginName?: string;
+  readonly cause?: unknown;
+
+  constructor(args: TackErrorFields & { readonly pluginName?: string }) {
+    super(readOwnString(args, "message") ?? "");
+    this.name = "TackPluginError";
+    const pluginName = readOwnData(args, "pluginName");
+    if (pluginName.found && typeof pluginName.value === "string") {
+      this.pluginName = pluginName.value;
+    }
+    const cause = readOwnData(args, "cause");
+    if (cause.found) {
+      this.cause = cause.value;
+    }
+  }
+}
+
 export type TackError =
   | TackConfigError
   | TackIoError
   | TackRuntimeError
-  | TackGeneratorError;
+  | TackGeneratorError
+  | TackPluginError;
 
 export function formatTackError(error: unknown): string {
   const message = readOwnData(error, "message");

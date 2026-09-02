@@ -1,5 +1,6 @@
 {
   "lockfileVersion": 1,
+  "configVersion": 0,
   "workspaces": {
     "": {
       "name": "tack",
@@ -24,6 +25,7 @@
         "@modelcontextprotocol/client": "2.0.0-beta.5",
         "@tack/runtime-quickjs": "workspace:*",
         "@tack/sources": "workspace:*",
+        "@tack/typecheck": "workspace:*",
         "typescript": "^7.0.2",
         "vitest": "^4.1.10",
       },
@@ -43,6 +45,7 @@
         "@tack/runtime-workerd": "workspace:*",
         "@tack/service": "workspace:*",
         "@tack/sources": "workspace:*",
+        "@tack/typecheck": "workspace:*",
         "commander": "^15.0.0",
       },
       "devDependencies": {
@@ -57,7 +60,7 @@
       "version": "0.1.0",
       "dependencies": {
         "@tack/core": "workspace:*",
-        "json-schema-to-typescript": "^15.0.4",
+        "@tack/sdk-types": "workspace:*",
       },
       "devDependencies": {
         "typescript": "^7.0.2",
@@ -80,7 +83,7 @@
       "version": "0.1.0",
       "dependencies": {
         "@tack/core": "workspace:*",
-        "json-schema-to-typescript": "^15.0.4",
+        "@tack/sdk-types": "workspace:*",
       },
       "devDependencies": {
         "typescript": "^7.0.2",
@@ -130,6 +133,18 @@
         "vitest": "^4.1.10",
       },
     },
+    "packages/sdk-types": {
+      "name": "@tack/sdk-types",
+      "version": "0.1.0",
+      "dependencies": {
+        "@tack/core": "workspace:*",
+        "json-schema-to-typescript": "^15.0.4",
+      },
+      "devDependencies": {
+        "typescript": "^7.0.2",
+        "vitest": "^4.1.10",
+      },
+    },
     "packages/service": {
       "name": "@tack/service",
       "version": "0.1.0",
@@ -151,6 +166,20 @@
         "@tack/core": "workspace:*",
         "@tack/mcp": "workspace:*",
         "zod": "^4.4.3",
+      },
+      "devDependencies": {
+        "typescript": "^7.0.2",
+        "vitest": "^4.1.10",
+      },
+    },
+    "packages/typecheck": {
+      "name": "@tack/typecheck",
+      "version": "0.1.0",
+      "dependencies": {
+        "@tack/codemode": "workspace:*",
+        "@tack/core": "workspace:*",
+        "@tack/sdk-types": "workspace:*",
+        "typescript-5": "npm:typescript@^5.9.0",
       },
       "devDependencies": {
         "typescript": "^7.0.2",
@@ -307,9 +336,13 @@
 
     "@tack/runtime-workerd": ["@tack/runtime-workerd@workspace:packages/runtime-workerd"],
 
+    "@tack/sdk-types": ["@tack/sdk-types@workspace:packages/sdk-types"],
+
     "@tack/service": ["@tack/service@workspace:packages/service"],
 
     "@tack/sources": ["@tack/sources@workspace:packages/sources"],
+
+    "@tack/typecheck": ["@tack/typecheck@workspace:packages/typecheck"],
 
     "@turbo/darwin-64": ["@turbo/darwin-64@2.10.6", "", { "os": "darwin", "cpu": "x64" }, "sha512-S+yIyZkmjYBQbIM7sTqMAwnLeMjSK60Q9grUDPbTWvkRjbsn5k1Rt5sPvTX80M4PnlYQBwLiYsjlu6tHsuIqQQ=="],
 
@@ -544,6 +577,8 @@
     "turbo": ["turbo@2.10.6", "", { "optionalDependencies": { "@turbo/darwin-64": "2.10.6", "@turbo/darwin-arm64": "2.10.6", "@turbo/linux-64": "2.10.6", "@turbo/linux-arm64": "2.10.6", "@turbo/windows-64": "2.10.6", "@turbo/windows-arm64": "2.10.6" }, "bin": { "turbo": "bin/turbo" } }, "sha512-3VfH7fK7WQ/ZHYjvfWyVnPRpcNaX3ZqXfGDMdc82eGdM0ESATyxFK4R4PM3wNsVFsdkUFZ4pZpkNeG37dxOv+g=="],
 
     "typescript": ["typescript@7.0.2", "", { "optionalDependencies": { "@typescript/typescript-aix-ppc64": "7.0.2", "@typescript/typescript-darwin-arm64": "7.0.2", "@typescript/typescript-darwin-x64": "7.0.2", "@typescript/typescript-freebsd-arm64": "7.0.2", "@typescript/typescript-freebsd-x64": "7.0.2", "@typescript/typescript-linux-arm": "7.0.2", "@typescript/typescript-linux-arm64": "7.0.2", "@typescript/typescript-linux-loong64": "7.0.2", "@typescript/typescript-linux-mips64el": "7.0.2", "@typescript/typescript-linux-ppc64": "7.0.2", "@typescript/typescript-linux-riscv64": "7.0.2", "@typescript/typescript-linux-s390x": "7.0.2", "@typescript/typescript-linux-x64": "7.0.2", "@typescript/typescript-netbsd-arm64": "7.0.2", "@typescript/typescript-netbsd-x64": "7.0.2", "@typescript/typescript-openbsd-arm64": "7.0.2", "@typescript/typescript-openbsd-x64": "7.0.2", "@typescript/typescript-sunos-x64": "7.0.2", "@typescript/typescript-win32-arm64": "7.0.2", "@typescript/typescript-win32-x64": "7.0.2" }, "bin": { "tsc": "bin/tsc" } }, "sha512-8FYau96o3NKOhbjKi/qNvG/W5jhzxkbdm5sj9AbZ/5T5sWqn3hJgLfGx27sRKZWTvyzCP8dLRBTf5tBTSRVUNA=="],
+
+    "typescript-5": ["typescript@5.9.3", "", { "bin": { "tsc": "bin/tsc", "tsserver": "bin/tsserver" } }, "sha512-jl1vZzPDinLr9eUt3J/t7V6FgNEw9QjvBPdysz9KfQDD41fQrC2Y4vKQdiaUpFT4bXlb1RHhLpp8wtm6M5TgSw=="],
 
     "undici-types": ["undici-types@8.3.0", "", {}, "sha512-j375ScV60dom+YkPFIfTLcOiPxkN/buHz5GobjLhixFuANaNs3C9l4GmrWqejgXWJ7BbJcFYpTEUkS1Ge8bpZQ=="],
 

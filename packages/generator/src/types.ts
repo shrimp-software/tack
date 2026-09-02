@@ -18,11 +18,6 @@ export interface GeneratedMethod {
   readonly resultType: string;
 }
 
-export interface MethodTree {
-  readonly children: Map<string, MethodTree>;
-  method?: GeneratedMethod;
-}
-
 export interface GeneratedFile {
   readonly fileName: string;
   readonly contents: string;

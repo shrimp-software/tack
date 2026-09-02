@@ -8,7 +8,7 @@ import {
 
 import { describeTool, normalizeDescribeToolInput } from "./describe.js";
 import { isOperationAllowed, type OperationPolicy } from "./policy.js";
-import { listNamespaces, normalizeSearchInput, searchOperations } from "./search.js";
+import { attachTypeScript, listNamespaces, normalizeSearchInput, searchOperations } from "./search.js";
 import type { BuiltinTraceEvent, ToolCallOutput, ToolInvoker, ToolTraceEvent } from "./types.js";
 
 export interface CreateTackToolInvokerOptions {
@@ -48,13 +48,19 @@ export function createTackToolInvoker(
       const path = typeof pathInput === "string" ? pathInput : "";
       const args = ownField<unknown>(input, "args");
       if (path === "search") {
-        return traceBuiltin(context, "search", () => {
+        return traceBuiltin(context, "search", async () => {
           const searchInput = normalizeSearchInput(args);
           // A bare `search({ query: "" })` returns the namespace index — the
           // top-level catalog view — instead of the full flat operation list.
-          return searchInput.query.length === 0 && searchInput.namespace === undefined
-            ? listNamespaces(context.manifest, context.policy)
-            : searchOperations(context.manifest, searchInput, context.policy);
+          if (searchInput.query.length === 0 && searchInput.namespace === undefined) {
+            return listNamespaces(context.manifest, context.policy);
+          }
+          const result = searchOperations(context.manifest, searchInput, context.policy);
+          // `types` compiles a schema pair per item — only honored with a
+          // `namespace` so it can never fan out over the whole catalog.
+          return searchInput.types === true && searchInput.namespace !== undefined
+            ? attachTypeScript(result, context.manifest)
+            : result;
         });
       }
 

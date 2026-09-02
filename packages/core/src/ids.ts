@@ -24,6 +24,31 @@ export function toIdentifier(value: string, fallback = "item"): string {
   return /^[a-zA-Z_$]/.test(name) ? name : `_${name}`;
 }
 
+/**
+ * PascalCase a raw identifier for use as a TypeScript type-name segment.
+ * Splits on case boundaries, digits, and non-alphanumerics; guards a leading
+ * non-identifier character with `_` so the result is always a valid TS name
+ * (e.g. `"2fa"` → `"_2Fa"`, `""` → `"_Item"`). Shared by the static SDK
+ * (`@tack/generator`) and code-mode type surfaces (`@tack/codemode`).
+ */
+export function typeSegment(identifier: string): string {
+  const value = typeSegmentWords(identifier).map(capitalizeWord).join("");
+  return /^[A-Z_$]/u.test(value) ? value : `_${value || "Item"}`;
+}
+
+/** Quote a property name for an object type / literal (always quoted). */
+export function propertyKey(name: string): string {
+  return JSON.stringify(name);
+}
+
+function typeSegmentWords(identifier: string): string[] {
+  return identifier.match(/[A-Z]+(?=[A-Z][a-z]|\d|$)|[A-Z]?[a-z]+|\d+/g) ?? [];
+}
+
+function capitalizeWord(value: string): string {
+  return value.charAt(0).toUpperCase() + value.slice(1);
+}
+
 export function dedupeName(base: string, used: Set<string>): string {
   if (!used.has(base)) {
     used.add(base);

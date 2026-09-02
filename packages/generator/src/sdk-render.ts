@@ -1,22 +1,29 @@
 import {
   hasRequiredInput,
-  objectRecord,
+  propertyKey,
+  typeSegment,
   type TackManifest
 } from "@tack/core";
+import {
+  argSignature,
+  buildMethodTree,
+  compileSchema,
+  renderInterfaceTree,
+  renderToolsAmbientDts,
+  type MethodTree
+} from "@tack/sdk-types";
 
 import {
   assertRuntimeManifestServerCoverage,
   assertSafeGeneratedServerNames,
   assertVisibleManifestToolsArePlannable
 } from "./manifest-checks.js";
-import { objectLiteralKey, propertyKey, typeSegment } from "./naming.js";
-import { compileSchema } from "./schema-types.js";
+import { objectLiteralKey } from "./naming.js";
 import {
   GENERATED_FILE_HEADER,
   SDK_RUNTIME_MANIFEST_GENERATED_AT,
   type GeneratedFile,
-  type GeneratedMethod,
-  type MethodTree
+  type GeneratedMethod
 } from "./types.js";
 
 export async function renderSdkFiles(
@@ -31,12 +38,19 @@ export async function renderSdkFiles(
   return [
     { fileName: "types.ts", contents: await renderTypes(methods) },
     { fileName: "index.ts", contents: renderIndex(manifest, methods, methodsByServer) },
+    {
+      fileName: "tools.d.ts",
+      contents: renderToolsAmbientDts(methods, { header: GENERATED_FILE_HEADER })
+    },
     ...[...methodsByServer.entries()].map(([serverName, serverMethods]) => ({
       fileName: `${serverName}.ts`,
       contents: renderServer(serverName, serverMethods)
     }))
   ];
 }
+
+/** Label for `assertLocalSchemaRefs` errors raised while compiling SDK types. */
+const SDK_TYPES_CONTEXT = "generated SDK types";
 
 async function renderTypes(methods: readonly GeneratedMethod[]): Promise<string> {
   const chunks = [
@@ -45,10 +59,10 @@ async function renderTypes(methods: readonly GeneratedMethod[]): Promise<string>
   ];
 
   for (const method of methods) {
-    chunks.push(await compileSchema(method.inputSchema, method.inputType));
+    chunks.push(await compileSchema(method.inputSchema, method.inputType, { context: SDK_TYPES_CONTEXT }));
     chunks.push(
       method.outputSchema
-        ? await compileSchema(method.outputSchema, method.outputType)
+        ? await compileSchema(method.outputSchema, method.outputType, { context: SDK_TYPES_CONTEXT })
         : `export type ${method.outputType} = unknown;\n`
     );
     chunks.push(`export type ${method.resultType} = import("@tack/core").TackResult<${method.outputType}>;\n`);
@@ -161,7 +175,7 @@ function renderServer(
     "",
     ...renderArgHelpers(methods),
     `export interface ${clientType} {`,
-    ...renderInterfaceTree(tree, "  "),
+    ...renderInterfaceTree(tree, "  ", { result: (method) => method.resultType }),
     "}",
     "",
     `export function create${clientType}(runtime: TackRuntime): ${clientType} {`,
@@ -301,56 +315,7 @@ function renderTypeImport(typeNames: readonly string[]): string {
   ].join("\n");
 }
 
-function buildMethodTree(methods: readonly GeneratedMethod[]): MethodTree {
-  const root: MethodTree = { children: new Map() };
-
-  for (const method of methods) {
-    let node = root;
-    const parentPath: string[] = [];
-    for (const segment of method.path) {
-      if (node.method) {
-        throw new Error(
-          `Generated SDK path ${method.namespaceName}.${method.path.join(".")} nests under ` +
-          `${method.namespaceName}.${parentPath.join(".")}. Inferred operation paths must not overlap.`
-        );
-      }
-
-      const child = node.children.get(segment) ?? { children: new Map() };
-      node.children.set(segment, child);
-      node = child;
-      parentPath.push(segment);
-    }
-
-    if (node.children.size > 0) {
-      throw new Error(
-        `Generated SDK path ${method.namespaceName}.${method.path.join(".")} is a prefix of another operation. ` +
-        "Inferred operation paths must not overlap."
-      );
-    }
-    node.method = method;
-  }
-
-  return root;
-}
-
-function renderInterfaceTree(tree: MethodTree, indent: string): string[] {
-  return [...tree.children.entries()].flatMap(([name, child]) => {
-    if (child.method) {
-      return [
-        ...renderJsDoc(child.method.description, child.method.examples, indent),
-        `${indent}${propertyKey(name)}(${argSignature(child.method)}): Promise<${child.method.resultType}>;`
-      ];
-    }
-
-    return [
-      `${indent}readonly ${propertyKey(name)}: {`,
-      ...renderInterfaceTree(child, `${indent}  `),
-      `${indent}};`
-    ];
-  });
-}
-
-function renderObjectTree(tree: MethodTree, indent: string): string[] {
+function renderObjectTree(tree: MethodTree<GeneratedMethod>, indent: string): string[] {
   return [...tree.children.entries()].flatMap(([name, child]) => {
     if (child.method) {
       return [`${indent}${propertyKey(name)}: (${argSignature(child.method)}) => ${callExpression(child.method)},`];
@@ -364,10 +329,6 @@ function renderObjectTree(tree: MethodTree, indent: string): string[] {
   });
 }
 
-function argSignature(method: GeneratedMethod): string {
-  return `${hasRequiredInput(method.inputSchema) ? "args" : "args?"}: ${method.inputType}`;
-}
-
 function callExpression(method: GeneratedMethod): string {
   const argsExpression = hasRequiredInput(method.inputSchema) ? "args" : "args ?? {}";
   const finalArgs = method.injectedArgs
@@ -377,28 +338,4 @@ function callExpression(method: GeneratedMethod): string {
     : `ownDataRecord(${argsExpression})`;
 
   return `clientRuntime.invoke<${method.outputType}>(${JSON.stringify(method.toolId)}, ${finalArgs})`;
-}
-
-function renderJsDoc(
-  description: string | undefined,
-  examples: readonly string[],
-  indent: string
-): string[] {
-  if (!description && examples.length === 0) {
-    return [];
-  }
-
-  const lines = [
-    ...(description ? jsDocTextLines(description, true) : []),
-    ...(description && examples.length > 0 ? [""] : []),
-    ...examples.flatMap((example) => ["@example", ...jsDocTextLines(example, true)])
-  ];
-  return [`${indent}/**`, ...lines.map((line) => `${indent} * ${line}`), `${indent} */`];
-}
-
-function jsDocTextLines(value: string, escapeTags: boolean): string[] {
-  return value
-    .replaceAll("*/", "* /")
-    .split(/\r\n|\r|\n/)
-    .map((line) => escapeTags && /^\s*@/u.test(line) ? line.replace("@", "\\@") : line);
 }

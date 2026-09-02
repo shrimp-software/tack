@@ -11,6 +11,7 @@ import { createExecuteDescription } from "./guide.js";
 import { filterAllowedOperations } from "./policy.js";
 import type { OperationPolicy } from "./policy.js";
 import { renderToolsPrelude } from "./tools.js";
+import { formatTypeDiagnostics } from "./type-diagnostics.js";
 import type {
   CodeRuntime,
   CodeRuntimeExecuteInput,
@@ -20,9 +21,14 @@ import type {
   DerefResult,
   ExecutionResult,
   ExecutionTrace,
+  TypeChecker,
+  TypeDiagnostic,
   ToolTraceEvent,
   TraceSink
 } from "./types.js";
+
+/** Typecheck posture: block on diagnostics, attach-but-run, or skip entirely. */
+export type TypecheckMode = "error" | "warn" | "off";
 
 export interface CreateExecutionEngineOptions {
   readonly manifest: TackManifest;
@@ -32,11 +38,20 @@ export interface CreateExecutionEngineOptions {
   readonly onAuditEvent?: Parameters<typeof createTackToolInvoker>[0]["onAuditEvent"];
   /** Live trace sink — receives every tool/builtin event as the execution runs. */
   readonly onTrace?: TraceSink | undefined;
+  /**
+   * Pre-run typecheck. When set, every cell is checked before it executes;
+   * `mode: "error"` blocks on any diagnostic (nothing upstream fires),
+   * `mode: "warn"` attaches diagnostics and runs anyway. A per-call
+   * {@link ExecuteOptions.typecheck} overrides the mode.
+   */
+  readonly typecheck?: { readonly checker: TypeChecker; readonly mode: "error" | "warn" } | undefined;
 }
 
 export interface ExecuteOptions {
   readonly onTrace?: TraceSink | undefined;
   readonly signal?: AbortSignal | undefined;
+  /** Override the engine's typecheck mode for this cell. */
+  readonly typecheck?: TypecheckMode | undefined;
 }
 
 /** A stateful code-mode session: `exec` cells share one persistent scope. */
@@ -45,12 +60,14 @@ export interface ExecutionSession {
   exec(code: string, options?: ExecuteOptions): Promise<ExecutionResult>;
   /** Retrieve a value an earlier cell retained as a ref. Never rejects. */
   deref(ref: string, options?: DerefOptions): Promise<DerefResult>;
+  /** Names in scope from earlier cells (bindings + `$N`/`$_` refs). */
+  scope(): { readonly names: readonly string[] };
   close(): Promise<void>;
 }
 
 export interface ExecutionEngine {
   getDescription(): string;
-  execute(code: string, signal?: AbortSignal): Promise<ExecutionResult>;
+  execute(code: string, options?: ExecuteOptions): Promise<ExecutionResult>;
   /** Whether the underlying runtime supports {@link ExecutionEngine.createSession}. */
   readonly supportsSessions: boolean;
   createSession(options?: CodeSessionOptions): Promise<ExecutionSession>;
@@ -65,6 +82,7 @@ export function createExecutionEngine(
   const policy = ownField(options, "policy") as OperationPolicy | undefined;
   const onAuditEvent = ownField(options, "onAuditEvent") as CreateExecutionEngineOptions["onAuditEvent"];
   const defaultOnTrace = ownField(options, "onTrace") as TraceSink | undefined;
+  const typecheck = ownField(options, "typecheck") as CreateExecutionEngineOptions["typecheck"];
 
   const toolsPrelude = renderToolsPrelude(
     filterAllowedOperations(listOperations(manifest), policy).map((operation) => operation.fullPathString)
@@ -73,13 +91,40 @@ export function createExecutionEngine(
   const runCell = async (
     run: (input: CodeRuntimeExecuteInput, signal?: AbortSignal) => Promise<ExecutionResult>,
     code: string,
-    cellOptions: ExecuteOptions | undefined
+    cellOptions: ExecuteOptions | undefined,
+    scopeNames?: readonly string[]
   ): Promise<ExecutionResult> => {
     const onTrace = cellOptions?.onTrace ?? defaultOnTrace;
     const executionId = randomUUID();
     const startedAtMs = Date.now();
     const startedAt = new Date(startedAtMs).toISOString();
     const traceEvents: ToolTraceEvent[] = [];
+
+    // Pre-run typecheck. `error` blocks (nothing upstream fires); `warn` attaches
+    // diagnostics and continues; a checker that skips is treated as absent.
+    const mode = cellOptions?.typecheck ?? typecheck?.mode;
+    let typeDiagnostics: readonly TypeDiagnostic[] | undefined;
+    if (typecheck?.checker && mode && mode !== "off") {
+      const outcome = await typecheck.checker.check(
+        code,
+        scopeNames && scopeNames.length > 0 ? { scopeNames } : undefined
+      );
+      if (!outcome.skipped && outcome.diagnostics.length > 0) {
+        if (mode === "error") {
+          return {
+            executionId,
+            ok: false,
+            emitted: [],
+            logs: [],
+            error: { phase: "typecheck", message: formatTypeDiagnostics(outcome.diagnostics) },
+            typeDiagnostics: outcome.diagnostics,
+            trace: summarizeTrace({ runtime: codeRuntime, startedAt, startedAtMs, events: [] })
+          };
+        }
+        typeDiagnostics = outcome.diagnostics;
+      }
+    }
+
     const invoker = createTackToolInvoker({
       manifest,
       runtime,
@@ -101,28 +146,33 @@ export function createExecutionEngine(
     return {
       ...result,
       executionId,
-      trace: summarizeTrace({ runtime: codeRuntime, startedAt, startedAtMs, events: traceEvents })
+      trace: summarizeTrace({ runtime: codeRuntime, startedAt, startedAtMs, events: traceEvents }),
+      ...(typeDiagnostics ? { typeDiagnostics } : {})
     };
   };
 
   return {
     getDescription: () => createExecuteDescription(manifest, policy),
     supportsSessions: typeof codeRuntime.createSession === "function",
-    execute: (code, signal) =>
-      runCell((input, sig) => codeRuntime.execute(input, sig), code, signal ? { signal } : undefined),
+    execute: (code, cellOptions) =>
+      runCell((input, sig) => codeRuntime.execute(input, sig), code, cellOptions),
     createSession: async (sessionOptions) => {
       if (typeof codeRuntime.createSession !== "function") {
         throw new Error(`Runtime "${codeRuntime.name}" does not support sessions`);
       }
       const codeSession = await codeRuntime.createSession(sessionOptions);
       const id = `s_${randomUUID()}`;
+      const scope = (): { readonly names: readonly string[] } =>
+        typeof codeSession.scope === "function" ? codeSession.scope() : { names: [] };
       return {
         id,
-        exec: (code, cellOptions) => runCell((input, sig) => codeSession.exec(input, sig), code, cellOptions),
+        exec: (code, cellOptions) =>
+          runCell((input, sig) => codeSession.exec(input, sig), code, cellOptions, scope().names),
         deref: (ref, derefOptions): Promise<DerefResult> =>
           typeof codeSession.deref === "function"
             ? codeSession.deref(ref, derefOptions)
             : Promise.resolve({ ok: false, error: "This runtime does not support deref" }),
+        scope,
         close: () => codeSession.close()
       };
     }

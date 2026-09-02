@@ -25,10 +25,12 @@
     "@tack/codemode": "workspace:*",
     "@tack/core": "workspace:*",
     "@tack/generator": "workspace:*",
+    "@tack/plugin": "workspace:*",
     "@tack/runtime-quickjs": "workspace:*",
     "@tack/runtime-workerd": "workspace:*",
     "@tack/service": "workspace:*",
     "@tack/sources": "workspace:*",
+    "@tack/typecheck": "workspace:*",
     "commander": "^15.0.0"
   },
   "devDependencies": {

@@ -17,7 +17,7 @@ export interface ToolInvoker {
   invoke(input: ToolInvokeInput): Promise<unknown>;
 }
 
-export type ExecuteErrorPhase = "parse" | "runtime" | "timeout";
+export type ExecuteErrorPhase = "parse" | "typecheck" | "runtime" | "timeout";
 
 export interface ExecuteError {
   readonly phase: ExecuteErrorPhase;
@@ -32,6 +32,49 @@ export interface ExecutionResult {
   readonly logs: readonly string[];
   readonly trace?: ExecutionTrace | undefined;
   readonly error?: ExecuteError;
+  /**
+   * TypeScript diagnostics from the pre-run typecheck. Present when the checker
+   * found something: on a blocked result (`error.phase === "typecheck"`, nothing
+   * ran) or alongside a normal result in `warn` mode.
+   */
+  readonly typeDiagnostics?: readonly TypeDiagnostic[] | undefined;
+}
+
+/** One TypeScript diagnostic, positioned in the model's original cell source. */
+export interface TypeDiagnostic {
+  /** 1-based line in the submitted code. */
+  readonly line: number;
+  /** 1-based column. */
+  readonly column: number;
+  /** e.g. `"TS2551"`. */
+  readonly code: string;
+  readonly message: string;
+  readonly category: "error" | "warning";
+}
+
+export interface TypeCheckContext {
+  /**
+   * Session bindings already in scope from earlier cells (ordinary names + `$N`
+   * / `$_` ref identifiers). Declared to the checker so a cell referencing them
+   * isn't flagged as using an undefined name.
+   */
+  readonly scopeNames?: readonly string[] | undefined;
+}
+
+export interface TypeCheckOutcome {
+  readonly diagnostics: readonly TypeDiagnostic[];
+  /** True when the checker could not run (e.g. its language service threw). The
+   *  engine proceeds with execution — a checker fault never blocks a run. */
+  readonly skipped?: boolean | undefined;
+  readonly skipReason?: string | undefined;
+}
+
+/**
+ * Pre-run typechecker for code-mode cells. Implemented by `@tack/typecheck` and
+ * injected into `createExecutionEngine`; `@tack/codemode` never imports it.
+ */
+export interface TypeChecker {
+  check(code: string, context?: TypeCheckContext): Promise<TypeCheckOutcome>;
 }
 
 export interface ExecutionTrace {
@@ -123,6 +166,8 @@ export interface CodeSession {
   exec(input: CodeRuntimeExecuteInput, signal?: AbortSignal): Promise<ExecutionResult>;
   /** Retrieve a value retained as a {@link TackRef} by an earlier cell. */
   deref?(ref: string, options?: DerefOptions): Promise<DerefResult>;
+  /** Names currently in scope (bindings + `$N`/`$_` refs) — for the typechecker. */
+  scope?(): { readonly names: readonly string[] };
   close(): Promise<void>;
 }
 

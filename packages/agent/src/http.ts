@@ -11,7 +11,7 @@ import {
 } from "@tack/core";
 import type { CodeRuntime, OperationPolicy, ToolAuditEvent } from "@tack/codemode";
 
-import { createTackAgentServer } from "./server.js";
+import { createTackAgentServer, type CreateTackAgentServerOptions } from "./server.js";
 
 export interface HostedMcpUser {
   readonly id: string;
@@ -27,6 +27,7 @@ export interface ServeTackMcpHttpOptions {
   readonly users?: readonly HostedMcpUser[] | undefined;
   readonly policy?: OperationPolicy | undefined;
   readonly onAuditEvent?: ((event: ToolAuditEvent) => void | Promise<void>) | undefined;
+  readonly typecheck?: CreateTackAgentServerOptions["typecheck"];
 }
 
 export interface TackMcpHttpListenOptions {
@@ -48,6 +49,7 @@ interface HostedMcpContext {
   readonly users: readonly HostedMcpUserSnapshot[];
   readonly policy?: OperationPolicy | undefined;
   readonly onAuditEvent?: ServeTackMcpHttpOptions["onAuditEvent"] | undefined;
+  readonly typecheck?: CreateTackAgentServerOptions["typecheck"];
 }
 
 interface HostedMcpUserSnapshot {
@@ -115,7 +117,8 @@ function createHostedMcpHandler(context: HostedMcpContext): ReturnType<typeof cr
       // could never outlive one call.
       sessions: false,
       ...(policy ? { policy } : {}),
-      ...(context.onAuditEvent ? { onAuditEvent: context.onAuditEvent } : {})
+      ...(context.onAuditEvent ? { onAuditEvent: context.onAuditEvent } : {}),
+      ...(context.typecheck ? { typecheck: context.typecheck } : {})
     });
   });
 }
@@ -127,13 +130,15 @@ function normalizeServeOptions(options: ServeTackMcpHttpOptions): HostedMcpConte
   const users = sanitizeData(ownField(options, "users"), {}) as readonly HostedMcpUser[] | undefined;
   const policy = ownField(options, "policy") as OperationPolicy | undefined;
   const onAuditEvent = ownField(options, "onAuditEvent") as ServeTackMcpHttpOptions["onAuditEvent"];
+  const typecheck = ownField(options, "typecheck") as ServeTackMcpHttpOptions["typecheck"];
   return {
     manifest,
     runtime,
     codeRuntime,
     users: Array.isArray(users) ? users.map(normalizeUser) : [],
     ...(policy ? { policy } : {}),
-    ...(onAuditEvent ? { onAuditEvent } : {})
+    ...(onAuditEvent ? { onAuditEvent } : {}),
+    ...(typecheck ? { typecheck } : {})
   };
 }
 

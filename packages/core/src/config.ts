@@ -28,10 +28,20 @@ function buildConfigSchema(kinds: readonly SourceKind[]): z.ZodType<TackConfig> 
   }
 
   const schema = z.object({
-    servers: z.record(z.string(), buildServerConfigSchema(kinds)).refine(
-      (servers) => Object.keys(servers).length > 0,
-      "At least one server is required"
-    ),
+    servers: z.record(z.string(), buildServerConfigSchema(kinds)),
+    plugins: z
+      .record(
+        z.string(),
+        z.union([
+          z.object({
+            source: z.string().min(1),
+            ref: z.string().min(1),
+            subdir: z.string().min(1).optional()
+          }),
+          z.object({ path: z.string().min(1) })
+        ])
+      )
+      .optional(),
     runtime: z
       .object({
         type: z.enum(["quickjs", "workerd"]).optional(),
@@ -85,6 +95,11 @@ function buildConfigSchema(kinds: readonly SourceKind[]): z.ZodType<TackConfig> 
         baseUrl: z.string().url().optional(),
         replans: z.number().int().min(0).max(3).optional()
       })
+      .optional(),
+    typecheck: z
+      .object({
+        mode: z.enum(["error", "warn", "off"]).optional()
+      })
       .optional()
   }) satisfies z.ZodType<TackConfig>;
 
@@ -100,7 +115,14 @@ export function parseConfig(
   if (hasRemovedShapeConfig(data)) {
     throw new Error("config.shape was removed; Tack now infers operation paths automatically.");
   }
-  return buildConfigSchema(kinds).parse(data);
+  const config = buildConfigSchema(kinds).parse(data);
+  if (
+    Object.keys(config.servers).length === 0 &&
+    Object.keys(config.plugins ?? {}).length === 0
+  ) {
+    throw new TackConfigError({ message: "At least one server or plugin is required" });
+  }
+  return config;
 }
 
 function hasRemovedShapeConfig(input: unknown): boolean {

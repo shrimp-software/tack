@@ -1,5 +1,7 @@
 import { stat } from "node:fs/promises";
+import { dirname, join, resolve } from "node:path";
 import { DEFAULT_CONFIG_PATH, loadConfigPromise, type TackConfig } from "@tack/core";
+import { readLock } from "@tack/plugin";
 import { discoverManifest } from "@tack/sources";
 import { formatCliError } from "./cli-output.js";
 
@@ -47,6 +49,25 @@ export async function runDoctor(options: DoctorOptions): Promise<DoctorReport> {
     };
   }
 
+  const configDir = dirname(resolve(options.config));
+  const pluginEntries = Object.entries(config.plugins ?? {});
+  if (pluginEntries.length > 0) {
+    const gitPlugins = pluginEntries.filter(([, ref]) => "source" in ref).map(([name]) => name);
+    if (gitPlugins.length === 0) {
+      lines.push(checkLine("ok", `${pluginEntries.length} plugin(s) configured`));
+    } else {
+      const lock = await readLock(join(configDir, "tack.plugins.lock"));
+      const missing = gitPlugins.filter((name) => !lock.plugins[name]);
+      if (missing.length === 0) {
+        lines.push(checkLine("ok", `${pluginEntries.length} plugin(s) configured, lock in sync`));
+      } else {
+        ok = false;
+        lines.push(checkLine("fail", `Plugins not in tack.plugins.lock: ${missing.join(", ")}`));
+        lines.push(`Run \`tack plugins add\` for each, or \`tack plugins update\`.`);
+      }
+    }
+  }
+
   if (!options.discovery) {
     return {
       ok,
@@ -55,7 +76,7 @@ export async function runDoctor(options: DoctorOptions): Promise<DoctorReport> {
   }
 
   try {
-    const manifest = await discoverManifest(config);
+    const manifest = await discoverManifest(config, { configDir });
     lines.push(checkLine("ok", `Discovered ${Object.keys(manifest.tools).length} tool(s)`));
   } catch (error) {
     ok = false;

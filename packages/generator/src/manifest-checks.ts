@@ -101,7 +101,7 @@ export function assertRuntimeManifestServerCoverage(
       : [];
     if (
       id !== method.serverId ||
-      !["http", "stdio"].includes(transport as string) ||
+      !["http", "stdio", "module", "plugin"].includes(transport as string) ||
       !Array.isArray(tools)
     ) {
       throw new Error(`Generated SDK server ${method.serverId} has invalid manifest metadata`);

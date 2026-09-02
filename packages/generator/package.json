@@ -18,7 +18,7 @@
   },
   "dependencies": {
     "@tack/core": "workspace:*",
-    "json-schema-to-typescript": "^15.0.4"
+    "@tack/sdk-types": "workspace:*"
   },
   "devDependencies": {
     "typescript": "^7.0.2",

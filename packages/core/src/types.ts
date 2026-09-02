@@ -22,16 +22,51 @@ export interface ModuleServerConfig {
 }
 
 /**
+ * A plugin bundle mounted as one namespace. This is the *desugared* form: the
+ * top-level {@link TackConfig.plugins} block is resolved (fetched / anchored) to
+ * a local directory before it reaches config parsing, so by the time core sees a
+ * `plugin` source it is always a plain `path`.
+ */
+export interface PluginServerConfig {
+  readonly transport: "plugin";
+  readonly path: string;
+}
+
+/**
  * One configured tool source. A first-party source kind adds its config
  * interface + one arm here (and any new fields on {@link TackManifestServer}),
  * then a `SourceKind` in `./source-kinds/` — TypeScript unions are static, so
  * this is the one type edit. Everything else (parsing, manifest projection,
  * path anchoring) is registry-driven off the `SourceKind`.
  */
-export type TackServerConfig = StdioServerConfig | HttpServerConfig | ModuleServerConfig;
+export type TackServerConfig =
+  | StdioServerConfig
+  | HttpServerConfig
+  | ModuleServerConfig
+  | PluginServerConfig;
+
+/**
+ * A top-level {@link TackConfig.plugins} entry: either a git repo pinned to a
+ * ref (resolved to a commit and cached under `.tack/plugins/`) or a local
+ * directory used in place. `@tack/plugin` resolves each of these into a
+ * {@link PluginServerConfig} before discovery.
+ */
+export type PluginRef =
+  | {
+      readonly source: string;
+      readonly ref: string;
+      readonly subdir?: string | undefined;
+    }
+  | { readonly path: string };
 
 export interface TackConfig {
   readonly servers: Readonly<Record<string, TackServerConfig>>;
+  /**
+   * Plugin bundles to mount, each as one namespace. Resolved by `@tack/plugin`
+   * into synthetic `plugin` sources (added to {@link TackConfig.servers}) before
+   * discovery, so nothing downstream of `@tack/sources` sees this field.
+   */
+  readonly plugins?: Readonly<Record<string, PluginRef>> | undefined;
   readonly runtime?: {
     readonly type?: "quickjs" | "workerd" | undefined;
     readonly timeoutMs?: number | undefined;
@@ -66,6 +101,14 @@ export interface TackConfig {
     readonly baseUrl?: string | undefined;
     readonly replans?: number | undefined;
   } | undefined;
+  /**
+   * Pre-run typecheck of code-mode cells. On by default (`mode: "error"` blocks
+   * a cell on any diagnostic); set `mode: "warn"` to attach diagnostics but run
+   * anyway, or `mode: "off"` to disable.
+   */
+  readonly typecheck?: {
+    readonly mode?: "error" | "warn" | "off" | undefined;
+  } | undefined;
 }
 
 export interface RateLimitConfig {
@@ -83,7 +126,7 @@ export interface ServiceUserConfig {
 
 export interface TackManifestServer {
   readonly id: string;
-  readonly transport: "stdio" | "http" | "module";
+  readonly transport: "stdio" | "http" | "module" | "plugin";
   readonly command?: string | undefined;
   readonly args?: readonly string[] | undefined;
   readonly env?: Readonly<Record<string, string>> | undefined;
@@ -92,6 +135,8 @@ export interface TackManifestServer {
   readonly url?: string | undefined;
   readonly headers?: Readonly<Record<string, string>> | undefined;
   readonly entry?: string | undefined;
+  /** Resolved absolute plugin root — `plugin` transport only (mirrors `entry`). */
+  readonly pluginPath?: string | undefined;
   readonly tools: readonly string[];
 }
 
@@ -105,6 +150,13 @@ export interface TackTool {
   readonly inputSchema: JsonSchema;
   readonly outputSchema?: JsonSchema | undefined;
   readonly annotations?: JsonObject | undefined;
+  /**
+   * Explicit, pre-segmented operation path. When set, {@link TackOperation}
+   * planning uses it verbatim (one operation, no name inference, no
+   * discriminator split). Used by plugin sources to place tools at
+   * `mcp.<server>.<op>` / `<skill>`.
+   */
+  readonly path?: readonly string[] | undefined;
 }
 
 export interface TackOperation {

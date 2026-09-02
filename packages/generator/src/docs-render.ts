@@ -1,6 +1,7 @@
+import { compileSchema } from "@tack/sdk-types";
+
 import { markdownCodeBlock, markdownInlineCode } from "./markdown.js";
 import { groupMethodsByServer, plannedOperations, toGeneratedMethods } from "./methods.js";
-import { compileSchema } from "./schema-types.js";
 import type { GeneratedMethod } from "./types.js";
 import type { TackManifest } from "@tack/core";
 
@@ -29,9 +30,10 @@ export async function renderDocs(options: {
 }
 
 async function renderOperationDocs(operation: GeneratedMethod): Promise<string[]> {
-  const inputTypeScript = await compileSchema(operation.inputSchema, operation.inputType);
+  const context = { context: "generated SDK types" };
+  const inputTypeScript = await compileSchema(operation.inputSchema, operation.inputType, context);
   const outputTypeScript = operation.outputSchema
-    ? await compileSchema(operation.outputSchema, operation.outputType)
+    ? await compileSchema(operation.outputSchema, operation.outputType, context)
     : `export type ${operation.outputType} = unknown;\n`;
   const lines = [
     `### \`${operation.fullPathString}\``,

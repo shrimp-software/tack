@@ -7,6 +7,7 @@ import { describe, expect, it } from "vitest";
 import type { TackConfig } from "@tack/core";
 import { createQuickJSRuntime } from "@tack/runtime-quickjs";
 import { createRuntime, discoverManifest } from "@tack/sources";
+import { createTypeChecker } from "@tack/typecheck";
 
 import { createTackAgentServer } from "../src/index.js";
 import { extractText } from "./mcp-content.js";
@@ -29,14 +30,17 @@ interface ConnectedAgent {
   close(): Promise<void>;
 }
 
-async function connectAgent(): Promise<ConnectedAgent> {
+async function connectAgent(withTypecheck = false): Promise<ConnectedAgent> {
   const config = markdownConfig();
   const manifest = await discoverManifest(config);
   const runtime = await createRuntime({ config, manifest });
   const server = createTackAgentServer({
     manifest,
     runtime,
-    codeRuntime: createQuickJSRuntime({ timeoutMs: 5_000 })
+    codeRuntime: createQuickJSRuntime({ timeoutMs: 5_000 }),
+    ...(withTypecheck
+      ? { typecheck: { checker: createTypeChecker({ manifest }), mode: "error" as const } }
+      : {})
   });
   const client = new Client({ name: "tack-e2e", version: "0.1.0" });
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
@@ -68,6 +72,33 @@ describe("module source over MCP (e2e)", () => {
     try {
       const { tools } = await agent.client.listTools();
       expect(tools.map((tool) => tool.name).sort()).toEqual(["deref", "execute", "guide"]);
+    } finally {
+      await agent.close();
+    }
+  });
+
+  it("types the discovered module tools through search({ namespace, types: true })", async () => {
+    const agent = await connectAgent();
+    try {
+      const executed = await agent.client.callTool({
+        name: "execute",
+        arguments: {
+          code: `
+            const found = await tools.search({ namespace: "docs", types: true });
+            return found.items.map((item) => ({
+              path: item.path,
+              hasTs: typeof item.inputTypeScript === "string" && item.inputTypeScript.includes("Input")
+            }));
+          `
+        }
+      });
+      expect(executed.structuredContent).toMatchObject({
+        status: "completed",
+        result: [
+          { path: "docs.list", hasTs: true },
+          { path: "docs.read", hasTs: true }
+        ]
+      });
     } finally {
       await agent.close();
     }
@@ -255,6 +286,33 @@ describe("module source over MCP (e2e)", () => {
       expect(messages.indexOf("→ docs.read")).toBeLessThan(
         messages.findIndex((line) => /^← docs\.read ok/.test(line))
       );
+    } finally {
+      await agent.close();
+    }
+  });
+
+  it("typechecks a cell before it runs — a typo'd tool path is blocked", async () => {
+    const agent = await connectAgent(true);
+    try {
+      const blocked = await agent.client.callTool({
+        name: "execute",
+        arguments: { code: 'return await tools.docs.raed({ slug: "getting-started" });' }
+      });
+      expect(blocked.isError).toBe(true);
+      expect(blocked.structuredContent).toMatchObject({
+        status: "error",
+        error: { phase: "typecheck" }
+      });
+      expect(extractText(blocked.content)).toMatch(/raed|read/);
+
+      // a clean cell runs
+      const ok = await agent.client.callTool({
+        name: "execute",
+        arguments: {
+          code: 'const r = await tools.docs.read({ slug: "getting-started" });\nreturn r.ok ? r.data.title : null;'
+        }
+      });
+      expect(ok.structuredContent).toMatchObject({ status: "completed", result: "Getting Started" });
     } finally {
       await agent.close();
     }

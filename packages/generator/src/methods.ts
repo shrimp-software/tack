@@ -1,11 +1,10 @@
 import {
-  dedupeName,
+  assignOperationTypeNames,
   listOperations,
   type TackManifest,
   type TackOperation
 } from "@tack/core";
 
-import { typeSegment } from "./naming.js";
 import type { GeneratedMethod } from "./types.js";
 
 export function plannedOperations(manifest: TackManifest): TackOperation[] {
@@ -15,12 +14,12 @@ export function plannedOperations(manifest: TackManifest): TackOperation[] {
 }
 
 export function toGeneratedMethods(operations: readonly TackOperation[]): GeneratedMethod[] {
-  const usedTypeBases = new Set<string>();
+  const typeNames = assignOperationTypeNames(operations);
   return operations.map((operation) => {
-    const base = dedupeName(
-      [operation.namespaceName, ...operation.path].map(typeSegment).join(""),
-      usedTypeBases
-    );
+    const names = typeNames.get(operation.fullPathString);
+    if (!names) {
+      throw new Error(`No type names assigned for operation ${operation.fullPathString}`);
+    }
     return {
       namespaceName: operation.namespaceName,
       serverId: operation.serverId,
@@ -34,9 +33,9 @@ export function toGeneratedMethods(operations: readonly TackOperation[]): Genera
       inputSchema: operation.inputSchema,
       ...(operation.outputSchema ? { outputSchema: operation.outputSchema } : {}),
       ...(operation.injectedArgs ? { injectedArgs: operation.injectedArgs } : {}),
-      inputType: `${base}Input`,
-      outputType: `${base}Output`,
-      resultType: `${base}Result`
+      inputType: names.inputType,
+      outputType: names.outputType,
+      resultType: names.resultType
     };
   });
 }

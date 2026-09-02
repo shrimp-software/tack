@@ -1,17 +1,12 @@
 import {
-  assertLocalSchemaRefs,
+  CODE_MODE_RESULT_TS,
   findOperation,
   ownField,
-  pruneEmptySchemaCompositionArrays,
-  sanitizeData,
-  stripSchemaCompilerMetadata,
-  stripTypeScriptSchemaExtensions,
   type JsonSchema,
-  type TackManifest,
-  type TackOperation
+  type TackManifest
 } from "@tack/core";
-import { compile } from "json-schema-to-typescript";
 
+import { operationTypeScript } from "./operation-typescript.js";
 import { isOperationAllowed, type OperationPolicy } from "./policy.js";
 import { searchOperations } from "./search.js";
 
@@ -32,7 +27,7 @@ export interface DescribedTool {
   readonly inputTypeScript: string;
   /** Only when the tool has an output schema, or `types: true` was passed. */
   readonly outputTypeScript?: string | undefined;
-  /** Only when `types: true` was passed — input + output + a `ToolResult<T>` alias. */
+  /** Only when `types: true` was passed — input + output + a `CodeModeResult<T>` alias. */
   readonly typeScriptDefinitions?: string | undefined;
   readonly examples: readonly string[];
   readonly injectedArgs?: Readonly<Record<string, string>> | undefined;
@@ -69,16 +64,12 @@ export async function describeTool(
     return notFoundDescription(manifest, input.path, policy);
   }
 
-  const inputTypeName = typeName(operation, "Input");
-  const outputTypeName = typeName(operation, "Output");
-  const inputTypeScript = await compileSchema(operation.inputSchema, inputTypeName);
-  // Only compile an output type when there's a real schema, or the caller asked
-  // for the full type bundle. Otherwise it's just `export type X = unknown;`.
-  const outputTypeScript = operation.outputSchema
-    ? await compileSchema(operation.outputSchema, outputTypeName)
-    : input.types
-      ? `export type ${outputTypeName} = unknown;\n`
-      : undefined;
+  // Only compile an `unknown` output alias when the caller asked for the full
+  // type bundle; otherwise `outputTypeScript` stays absent for a schema-less tool.
+  const { typeBase, inputTypeScript, outputTypeScript } = await operationTypeScript(operation, {
+    includeUnknownOutput: input.types === true
+  });
+  const outputTypeName = `${typeBase}Output`;
 
   return {
     path: operation.fullPathString,
@@ -93,7 +84,7 @@ export async function describeTool(
           typeScriptDefinitions: [
             inputTypeScript.trim(),
             (outputTypeScript ?? `export type ${outputTypeName} = unknown;`).trim(),
-            `type ToolResult<T> = { ok: true; data: T; text: string; raw?: unknown } | { ok: false; error: { message: string }; text: string; raw?: unknown };`
+            CODE_MODE_RESULT_TS.trim()
           ].join("\n\n")
         }
       : {}),
@@ -122,28 +113,4 @@ function notFoundDescription(
       suggestions
     }
   };
-}
-
-async function compileSchema(schema: JsonSchema, typeName: string): Promise<string> {
-  return compile(schemaForTypeScript(schema) as JsonSchema, typeName, {
-    bannerComment: "",
-    unknownAny: false
-  });
-}
-
-function schemaForTypeScript(schema: JsonSchema): JsonSchema {
-  const next = sanitizeData(schema, {}) as JsonSchema;
-  stripTypeScriptSchemaExtensions(next);
-  stripSchemaCompilerMetadata(next);
-  pruneEmptySchemaCompositionArrays(next);
-  assertLocalSchemaRefs(next, "described tool types");
-  return next;
-}
-
-function typeName(operation: TackOperation, suffix: string): string {
-  return `${operation.fullPathString
-    .split(".")
-    .flatMap((segment) => segment.match(/[A-Z]+(?=[A-Z][a-z]|\d|$)|[A-Z]?[a-z]+|\d+/g) ?? [segment])
-    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
-    .join("")}${suffix}`;
 }

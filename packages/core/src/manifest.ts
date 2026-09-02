@@ -16,6 +16,13 @@ export interface DiscoveredTool {
   readonly inputSchema?: JsonSchema;
   readonly outputSchema?: JsonSchema;
   readonly annotations?: Record<string, unknown>;
+  /**
+   * Explicit, pre-segmented operation path. A source sets this to bypass the
+   * name-based path inference in `listOperations` — the tool becomes exactly one
+   * operation at this path. Plugin sources use it for `mcp.<server>.<op>` and
+   * `<skill>` placement.
+   */
+  readonly path?: readonly string[];
 }
 
 export interface DiscoveredServer {
@@ -46,7 +53,20 @@ export function buildManifest(
       .filter((server): server is DiscoveredServer => server != null && typeof server.serverId === "string")
       .map((server) => [server.serverId, server] as const)
   );
-  const usedNamespaces = new Set<string>(["close", "index", "tack", "types"]);
+  // Reserve the generated-file names (`close`, `index`, …) and the code-mode
+  // root API keys (`call`, `search`, `describe`, `emit`, `then`) — a namespace
+  // named one of the latter would shadow `tools.<key>` inside `execute`.
+  const usedNamespaces = new Set<string>([
+    "close",
+    "index",
+    "tack",
+    "types",
+    "call",
+    "search",
+    "describe",
+    "emit",
+    "then"
+  ]);
 
   for (const [serverId, serverConfig] of Object.entries(cleanConfig.servers ?? {})) {
     const discovered = discoveredByServer.get(serverId);
@@ -82,7 +102,8 @@ export function buildManifest(
         ...(tool.description ? { description: tool.description } : {}),
         inputSchema: tool.inputSchema ?? { type: "object", additionalProperties: true },
         ...(tool.outputSchema ? { outputSchema: tool.outputSchema } : {}),
-        ...(tool.annotations ? { annotations: tool.annotations } : {})
+        ...(tool.annotations ? { annotations: tool.annotations } : {}),
+        ...(Array.isArray(tool.path) && tool.path.length > 0 ? { path: [...tool.path] } : {})
       };
       serverToolIds.push(canonicalId);
     }

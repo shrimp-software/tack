@@ -9,6 +9,7 @@ const here = dirname(fileURLToPath(import.meta.url));
 const repoRoot = resolve(here, "..", "..", "..");
 const cliSource = join(repoRoot, "packages", "cli", "src", "index.ts");
 const fakeServer = join(repoRoot, "packages", "mcp", "test", "fixtures", "fake-mcp-server.mjs");
+const pluginFixture = join(repoRoot, "packages", "plugin", "test", "fixtures", "acme-plugin");
 
 let tmpPath: string | undefined;
 
@@ -141,7 +142,7 @@ describe("CLI", () => {
 
     const executed = await runCli([
       "execute",
-      "return (await tools.example.echo({ message: 'from execute' })).data;",
+      "const r = await tools.example.echo({ message: 'from execute' });\nreturn r.ok ? r.data : r.error;",
       "--config",
       configPath,
       "--json"
@@ -149,6 +150,20 @@ describe("CLI", () => {
     expect(JSON.parse(executed.stdout)).toMatchObject({
       ok: true,
       result: { message: "from execute" }
+    });
+
+    // On-by-default typecheck blocks a cell with a bad argument key.
+    const badArg = await runCli([
+      "execute",
+      "return await tools.example.echo({ mesage: 'typo' });",
+      "--config",
+      configPath,
+      "--json"
+    ], tmpPath, { reject: false });
+    expect(badArg.exitCode).toBe(1);
+    expect(JSON.parse(badArg.stdout)).toMatchObject({
+      ok: false,
+      error: { phase: "typecheck" }
     });
 
     const codePath = join(tmpPath, "probe.ts");
@@ -239,6 +254,43 @@ describe("CLI", () => {
       })
     ]);
   }, 15_000);
+
+  it("adds, lists, runs, and removes a local plugin", async () => {
+    tmpPath = await mkdtemp(join(tmpdir(), "tack-cli-plugin-"));
+    const configPath = join(tmpPath, "tack.config.json");
+    await writeFile(configPath, `${JSON.stringify({ servers: {} }, null, 2)}\n`, "utf8");
+
+    const added = await runCli(
+      ["plugins", "add", pluginFixture, "--as", "acme", "--config", configPath],
+      tmpPath
+    );
+    expect(added.stdout).toContain("Added plugin acme");
+    const config = JSON.parse(await readFile(configPath, "utf8"));
+    expect(config.plugins.acme).toEqual({ path: pluginFixture });
+
+    const list = await runCli(["plugins", "list", "--config", configPath], tmpPath);
+    expect(list.stdout).toContain("acme");
+
+    const inspect = await runCli(["inspect", "--config", configPath], tmpPath);
+    expect(inspect.stdout).toContain("acme.greet");
+    expect(inspect.stdout).toContain("acme.mcp.echo.echo");
+
+    const executed = await runCli(
+      [
+        "execute",
+        "const s = await tools.acme.greet(); return s.ok ? s.data.name : s.error;",
+        "--config",
+        configPath,
+        "--json"
+      ],
+      tmpPath
+    );
+    expect(JSON.parse(executed.stdout)).toMatchObject({ ok: true, result: "greet" });
+
+    const removed = await runCli(["plugins", "remove", "acme", "--config", configPath], tmpPath);
+    expect(removed.stdout).toContain("Removed plugin acme");
+    expect(JSON.parse(await readFile(configPath, "utf8")).plugins).toBeUndefined();
+  }, 20_000);
 });
 
 function runCli(

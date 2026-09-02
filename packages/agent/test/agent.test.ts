@@ -8,6 +8,8 @@ import { createQuickJSRuntime } from "@tack/runtime-quickjs";
 import { fakeRuntime, grafanaManifest } from "../../core/test/fixtures.js";
 import type { CodeRuntime } from "@tack/codemode";
 
+import { createTypeChecker } from "@tack/typecheck";
+
 import { createTackAgentServer } from "../src/index.js";
 import { extractText } from "./mcp-content.js";
 
@@ -785,6 +787,78 @@ describe("MCP server", () => {
       ]);
     } finally {
       await Promise.allSettled([client.close(), server.close()]);
+    }
+  });
+});
+
+describe("agent typecheck", () => {
+  async function connect(mode: "error" | "warn") {
+    const calls: Array<{ toolId: string; args: unknown }> = [];
+    const server = createTackAgentServer({
+      manifest: grafanaManifest(),
+      runtime: fakeRuntime(calls),
+      codeRuntime: createQuickJSRuntime({ timeoutMs: 5_000 }),
+      typecheck: { checker: createTypeChecker({ manifest: grafanaManifest() }), mode }
+    });
+    const client = new Client({ name: "tack-test", version: "0.1.0" });
+    const [ct, st] = InMemoryTransport.createLinkedPair();
+    await Promise.all([server.connect(st), client.connect(ct)]);
+    return { calls, client, close: () => Promise.allSettled([client.close(), server.close()]) };
+  }
+
+  it("blocks a cell with a bad argument key — nothing upstream runs", async () => {
+    const { calls, client, close } = await connect("error");
+    try {
+      const res = await client.callTool({
+        name: "execute",
+        arguments: { code: 'return (await tools.grafana.alerting.rules.list({ rule_uidx: "x" })).data;' }
+      });
+      expect(res.isError).toBe(true);
+      expect(res.structuredContent).toMatchObject({ status: "error", error: { phase: "typecheck" } });
+      const diags = (res.structuredContent as { typeDiagnostics?: unknown[] }).typeDiagnostics;
+      expect(Array.isArray(diags) && diags.length).toBeGreaterThan(0);
+      expect(extractText(res.content)).toContain("TS2561");
+      expect(calls).toEqual([]);
+    } finally {
+      await close();
+    }
+  });
+
+  it("typecheck: off runs the cell despite the type error", async () => {
+    const { calls, client, close } = await connect("error");
+    try {
+      const res = await client.callTool({
+        name: "execute",
+        arguments: {
+          code: "return (await tools.grafana.datasources.list()).data;",
+          typecheck: "off"
+        }
+      });
+      expect(res.structuredContent).toMatchObject({ status: "completed" });
+      expect(calls).toEqual([{ toolId: "grafana.list_datasources", args: {} }]);
+    } finally {
+      await close();
+    }
+  });
+
+  it("warn mode runs the cell but attaches diagnostics", async () => {
+    const { calls, client, close } = await connect("warn");
+    try {
+      // Reading `.data` without narrowing on `.ok` is a type error, but the
+      // fake runtime returns `{ ok: true, data }` so it's fine at runtime.
+      const res = await client.callTool({
+        name: "execute",
+        arguments: {
+          code: "const r = await tools.grafana.datasources.list();\nreturn r.data ?? 'ran';"
+        }
+      });
+      expect(res.structuredContent).toMatchObject({ status: "completed" });
+      const diags = (res.structuredContent as { typeDiagnostics?: unknown[] }).typeDiagnostics;
+      expect(Array.isArray(diags) && diags.length).toBeGreaterThan(0);
+      expect(extractText(res.content)).toContain("type warning");
+      expect(calls).toEqual([{ toolId: "grafana.list_datasources", args: {} }]);
+    } finally {
+      await close();
     }
   });
 });

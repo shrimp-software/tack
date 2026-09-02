@@ -7,26 +7,47 @@ import {
   sanitizeData,
   stripSchemaCompilerMetadata,
   stripTypeScriptSchemaExtensions,
+  typeSegment,
   visitSchemaNodes,
   type JsonSchema
 } from "@tack/core";
 
-import { typeSegment } from "./naming.js";
-
-export function compileSchema(schema: JsonSchema, typeName: string): Promise<string> {
-  return compile(schemaForTypeScript(schema, typeName), typeName, {
-    bannerComment: "",
-    unknownAny: false
-  });
+export interface CompileSchemaOptions {
+  /**
+   * Label threaded into {@link assertLocalSchemaRefs} errors so a caller can
+   * say where the bad `$ref` came from. Defaults to `"generated SDK types"`.
+   */
+  readonly context?: string | undefined;
 }
 
-function schemaForTypeScript(schema: JsonSchema, typeName: string): JsonSchema {
+/**
+ * Compile one JSON Schema into a TypeScript type declaration named `typeName`.
+ * The single schema→TS compiler: `@tack/generator` (static SDK types) and
+ * `@tack/codemode` (`describe.tool`, the ambient `tools` `.d.ts`) both call
+ * this, so their output can never drift.
+ */
+export function compileSchema(
+  schema: JsonSchema,
+  typeName: string,
+  options?: CompileSchemaOptions
+): Promise<string> {
+  return compile(
+    schemaForTypeScript(schema, typeName, options?.context ?? "generated SDK types"),
+    typeName,
+    {
+      bannerComment: "",
+      unknownAny: false
+    }
+  );
+}
+
+function schemaForTypeScript(schema: JsonSchema, typeName: string, context: string): JsonSchema {
   const next = sanitizeData(schema, {}) as JsonSchema;
   normalizeLiteralRefData(next);
   stripTypeScriptSchemaExtensions(next);
   stripSchemaCompilerMetadata(next);
   pruneEmptySchemaCompositionArrays(next);
-  assertLocalSchemaRefs(next, "generated SDK types");
+  assertLocalSchemaRefs(next, context);
   const { definitions, defs } = namespaceRootDefinitions(next, typeName);
   rewriteLocalDefinitionRefs(next, "definitions", definitions);
   rewriteLocalDefinitionRefs(next, "$defs", defs);

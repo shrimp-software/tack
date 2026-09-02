@@ -333,6 +333,27 @@ describe("quickjs session", () => {
         toolsPrelude: renderToolsPrelude()
       });
       expect(second).toMatchObject({ ok: true, result: 16 });
+
+      // scope() reports the prior-cell bindings (for the typechecker)
+      expect(session.scope!().names.slice().sort()).toEqual(["acc", "nums", "total"]);
+    } finally {
+      await session.close();
+    }
+  });
+
+  it("scope() includes minted ref identifiers", async () => {
+    const runtime = createQuickJSRuntime({ timeoutMs: 5_000, maxInlineResultBytes: 64 });
+    const session = await runtime.createSession!();
+    try {
+      await session.exec({
+        code: "const x = 1;\nreturn Array.from({ length: 400 }, (_, i) => ({ i, blob: 'x'.repeat(40) }));",
+        invoker: fakeInvoker([]),
+        toolsPrelude: renderToolsPrelude()
+      });
+      const names = session.scope!().names;
+      expect(names).toContain("x");
+      expect(names).toContain("$1");
+      expect(names).toContain("$_");
     } finally {
       await session.close();
     }

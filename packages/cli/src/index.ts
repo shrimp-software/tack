@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { appendFile, mkdir, readFile, stat } from "node:fs/promises";
-import { dirname } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { Command } from "commander";
 import {
   createAnthropicPlanner,
@@ -11,11 +11,14 @@ import {
 import {
   createExecutionEngine,
   formatTraceLine,
+  formatTypeDiagnostics,
   isOperationAllowed,
+  type CreateExecutionEngineOptions,
   type ExecutionResult,
   type OperationPolicy,
   type ToolAuditEvent
 } from "@tack/codemode";
+import { createTypeChecker } from "@tack/typecheck";
 import {
   DEFAULT_CONFIG_PATH,
   DEFAULT_OUTPUT_DIR,
@@ -24,12 +27,25 @@ import {
   listOperations,
   loadConfigPromise,
   operationArgs,
+  type PluginRef,
   type TackConfig,
   type TackManifest,
   type TackOperation,
   writeJsonPromise
 } from "@tack/core";
 import { generateDocsPromise, generateSdkPromise } from "@tack/generator";
+import {
+  ensureCheckout,
+  parsePluginRef,
+  readLock,
+  readPluginLayout,
+  resolveCommit,
+  resolvePluginsIntoConfig,
+  withLockEntry,
+  withoutLockEntry,
+  writeLock,
+  type ParsedPluginRef
+} from "@tack/plugin";
 import { createRuntime, discoverManifest } from "@tack/sources";
 import { createQuickJSRuntime } from "@tack/runtime-quickjs";
 import { createWorkerdRuntime } from "@tack/runtime-workerd";
@@ -241,12 +257,14 @@ program
       const runtime = await createRuntime({ config, manifest });
       const policy = createOperationPolicy(config);
       const onAuditEvent = createAuditSink(config);
+      const typecheck = createTypecheckOptions(config, manifest, policy);
       const engine = createExecutionEngine({
         manifest,
         runtime,
         codeRuntime: createCodeRuntime(runtimeConfig),
         ...(policy ? { policy } : {}),
         ...(onAuditEvent ? { onAuditEvent } : {}),
+        ...(typecheck ? { typecheck } : {}),
         ...(options.quiet ? {} : { onTrace: (event) => console.error(formatTraceLine(event)) })
       });
 
@@ -287,6 +305,184 @@ skill
     })
   );
 
+const plugins = program
+  .command("plugins")
+  .description("Add, list, update, or remove plugin bundles");
+
+type GitPluginRef = Extract<PluginRef, { source: string }>;
+
+/** Fetch a git plugin into the cache. Returns the plugin root + resolved commit. */
+async function fetchGitPlugin(
+  configDir: string,
+  ref: GitPluginRef,
+  name: string
+): Promise<{ commit: string; root: string; parsed: Extract<ParsedPluginRef, { kind: "git" }> }> {
+  const parsed = parsePluginRef(ref, name);
+  if (parsed.kind !== "git") {
+    throw new Error(`Plugin "${name}" is not a git source`);
+  }
+  const commit = await resolveCommit(parsed);
+  const root = await ensureCheckout({ ref: parsed, commit, cacheRoot: join(configDir, ".tack", "plugins") });
+  return { commit, root, parsed };
+}
+
+async function writeGitLock(
+  configDir: string,
+  name: string,
+  parsed: Extract<ParsedPluginRef, { kind: "git" }>,
+  commit: string
+): Promise<void> {
+  const lockPath = join(configDir, "tack.plugins.lock");
+  await writeLock(lockPath, withLockEntry(await readLock(lockPath), name, {
+    source: parsed.source,
+    ref: parsed.ref,
+    ...(parsed.subdir ? { subdir: parsed.subdir } : {}),
+    resolvedCommit: commit
+  }));
+}
+
+/** Read/mutate/write the `plugins` block of tack.config.json. */
+async function updatePluginsBlock(
+  configPath: string,
+  mutate: (block: Record<string, unknown>) => void
+): Promise<void> {
+  const raw = await readConfigObject(configPath);
+  const block: Record<string, unknown> = { ...(raw["plugins"] as Record<string, unknown> | undefined) };
+  mutate(block);
+  if (Object.keys(block).length > 0) {
+    raw["plugins"] = block;
+  } else {
+    delete raw["plugins"];
+  }
+  await writeJsonPromise(configPath, raw);
+}
+
+plugins
+  .command("add")
+  .description("Fetch a plugin and add it to tack.config.json")
+  .argument("<ref>", 'plugin source: "github:owner/repo", an https/ssh git URL, or a local path')
+  .option("-c, --config <path>", "config path", DEFAULT_CONFIG_PATH)
+  .option("--ref <ref>", "git tag, branch, or commit (required for a git source)")
+  .option("--subdir <dir>", "plugin root within the repo")
+  .option("--as <name>", "namespace to mount the plugin under")
+  .action(async (
+    ref: string,
+    options: { config: string; ref?: string; subdir?: string; as?: string }
+  ) =>
+    run(async () => {
+      const configDir = dirname(resolve(options.config));
+      const isLocal = ref.startsWith(".") || ref.startsWith("/");
+      if (!isLocal && !options.ref) {
+        throw new Error("A git plugin source needs --ref <tag|branch|commit>");
+      }
+
+      let root: string;
+      let fetched: Awaited<ReturnType<typeof fetchGitPlugin>> | null = null;
+      const pluginRef = isLocal
+        ? { path: ref }
+        : { source: ref, ref: options.ref!, ...(options.subdir ? { subdir: options.subdir } : {}) };
+      if ("path" in pluginRef) {
+        root = resolve(configDir, pluginRef.path);
+      } else {
+        fetched = await fetchGitPlugin(configDir, pluginRef, options.as ?? "plugin");
+        root = fetched.root;
+      }
+
+      const layout = await readPluginLayout(root);
+      const name = options.as ?? layout.manifest.name;
+      if (!/^[A-Za-z_$][A-Za-z0-9_$]*$/.test(name)) {
+        throw new Error(`Plugin name "${name}" is not a valid namespace; pass --as <name>`);
+      }
+
+      if (fetched) {
+        await writeGitLock(configDir, name, fetched.parsed, fetched.commit);
+      }
+      await updatePluginsBlock(options.config, (block) => { block[name] = pluginRef; });
+      console.log(
+        `Added plugin ${name}: ${layout.skills.length} skill(s), ${layout.mcpServers.length} bundled MCP server(s)`
+      );
+    })
+  );
+
+plugins
+  .command("list")
+  .description("List configured plugins")
+  .option("-c, --config <path>", "config path", DEFAULT_CONFIG_PATH)
+  .action(async (options: { config: string }) =>
+    run(async () => {
+      const configDir = dirname(resolve(options.config));
+      const config = await loadConfigPromise(options.config);
+      const entries = Object.entries(config.plugins ?? {});
+      if (entries.length === 0) {
+        console.log("No plugins configured.");
+        return;
+      }
+      const lock = await readLock(join(configDir, "tack.plugins.lock"));
+      for (const [name, ref] of entries) {
+        const where = "path" in ref ? ref.path : `${ref.source}@${ref.ref}`;
+        const commit = lock.plugins[name]?.resolvedCommit;
+        console.log(`${name}  ${where}${commit ? `  (${commit.slice(0, 12)})` : ""}`);
+      }
+    })
+  );
+
+plugins
+  .command("update")
+  .description("Re-resolve and re-fetch git plugins")
+  .argument("[name]", "plugin to update (default: all git plugins)")
+  .option("-c, --config <path>", "config path", DEFAULT_CONFIG_PATH)
+  .option("--ref <ref>", "new git ref (only with a <name>)")
+  .action(async (name: string | undefined, options: { config: string; ref?: string }) =>
+    run(async () => {
+      const configDir = dirname(resolve(options.config));
+      const config = await loadConfigPromise(options.config);
+      const targets = Object.entries(config.plugins ?? {}).filter(
+        ([n, ref]) => "source" in ref && (!name || n === name)
+      );
+      if (targets.length === 0) {
+        console.log(name ? `No git plugin named "${name}".` : "No git plugins to update.");
+        return;
+      }
+
+      for (const [n, ref] of targets) {
+        if (!("source" in ref)) {
+          continue;
+        }
+        const nextRef = name && options.ref ? { ...ref, ref: options.ref } : ref;
+        const { commit, parsed } = await fetchGitPlugin(configDir, nextRef, n);
+        await writeGitLock(configDir, n, parsed, commit);
+        if (name && options.ref) {
+          await updatePluginsBlock(options.config, (block) => { block[n] = nextRef; });
+        }
+        console.log(`${n} -> ${commit.slice(0, 12)}`);
+      }
+    })
+  );
+
+plugins
+  .command("remove")
+  .description("Remove a plugin from tack.config.json")
+  .argument("<name>")
+  .option("-c, --config <path>", "config path", DEFAULT_CONFIG_PATH)
+  .action(async (name: string, options: { config: string }) =>
+    run(async () => {
+      const configDir = dirname(resolve(options.config));
+      await updatePluginsBlock(options.config, (block) => {
+        if (!(name in block)) {
+          throw new Error(`No plugin named "${name}" in ${options.config}`);
+        }
+        delete block[name];
+      });
+
+      const lockPath = join(configDir, "tack.plugins.lock");
+      const lock = await readLock(lockPath);
+      if (lock.plugins[name]) {
+        await writeLock(lockPath, withoutLockEntry(lock, name));
+      }
+      console.log(`Removed plugin ${name} (cache under .tack/plugins left in place)`);
+    })
+  );
+
 program
   .command("mcp")
   .description("Start Tack's agent-facing MCP server over stdio")
@@ -299,13 +495,15 @@ program
       const policy = createOperationPolicy(config);
       const onAuditEvent = createAuditSink(config);
       const delegate = createDelegateOptions(config);
+      const typecheck = createTypecheckOptions(config, manifest, policy);
       const handle = serveTackMcpStdio({
         manifest,
         runtime,
         codeRuntime,
         ...(policy ? { policy } : {}),
         ...(onAuditEvent ? { onAuditEvent } : {}),
-        ...(delegate ? { delegate } : {})
+        ...(delegate ? { delegate } : {}),
+        ...(typecheck ? { typecheck } : {})
       });
 
       await waitForStdinClose();
@@ -328,13 +526,15 @@ program
       const codeRuntime = createCodeRuntime(config);
       const policy = createOperationPolicy(config);
       const onAuditEvent = createAuditSink(config);
+      const typecheck = createTypecheckOptions(config, manifest, policy);
       const handle = await listenTackMcpHttp({
         manifest,
         runtime,
         codeRuntime,
         users,
         ...(policy ? { policy } : {}),
-        ...(onAuditEvent ? { onAuditEvent } : {})
+        ...(onAuditEvent ? { onAuditEvent } : {}),
+        ...(typecheck ? { typecheck } : {})
       }, {
         host: options.host ?? config.service?.host,
         port: options.port ? parsePort(options.port) : config.service?.port,
@@ -365,6 +565,7 @@ program
       const codeRuntime = createCodeRuntime(config);
       const policy = createOperationPolicy(config);
       const onAuditEvent = createAuditSink(config);
+      const typecheck = createTypecheckOptions(config, manifest, policy);
       const handle = await listenTackHttpService({
         manifest,
         runtime,
@@ -373,7 +574,8 @@ program
         ...(policy ? { policy } : {}),
         ...(config.service?.maxRequestBytes ? { maxRequestBytes: config.service.maxRequestBytes } : {}),
         ...(config.service?.rateLimit ? { rateLimit: config.service.rateLimit } : {}),
-        ...(onAuditEvent ? { onAuditEvent } : {})
+        ...(onAuditEvent ? { onAuditEvent } : {}),
+        ...(typecheck ? { typecheck } : {})
       }, {
         host: options.host ?? config.service?.host,
         port: options.port ? parsePort(options.port) : config.service?.port
@@ -427,9 +629,27 @@ async function loadWorkspace(configPath: string): Promise<{
   readonly config: TackConfig;
   readonly manifest: TackManifest;
 }> {
-  const config = await loadConfigPromise(configPath);
-  const manifest = await discoverManifest(config);
+  const configDir = dirname(resolve(configPath));
+  const config = await resolvePluginsIntoConfig(
+    await loadConfigPromise(configPath),
+    { configDir }
+  );
+  const manifest = await discoverManifest(config, { configDir });
   return { config, manifest };
+}
+
+/** Read tack.config.json as a mutable plain object (preserves unknown keys). */
+async function readConfigObject(configPath: string): Promise<Record<string, unknown>> {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(await readFile(configPath, "utf8"));
+  } catch (cause) {
+    throw new Error(`Cannot read ${configPath}: ${cause instanceof Error ? cause.message : String(cause)}`);
+  }
+  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+    throw new Error(`${configPath} is not a JSON object`);
+  }
+  return parsed as Record<string, unknown>;
 }
 
 function createOperationPolicy(config: TackConfig): OperationPolicy | undefined {
@@ -449,6 +669,11 @@ function createDelegateOptions(config: TackConfig): DelegateOptions | undefined 
   if (!delegate?.model) {
     return undefined;
   }
+  // The `delegate` tool is experimental and not ready for general use. It stays
+  // unregistered unless explicitly opted into via TACK_DELEGATE_EXPERIMENTAL.
+  if (!process.env.TACK_DELEGATE_EXPERIMENTAL) {
+    return undefined;
+  }
   const apiKeyEnv = delegate.apiKeyEnv ?? "ANTHROPIC_API_KEY";
   const apiKey = process.env[apiKeyEnv];
   if (!apiKey) {
@@ -466,6 +691,28 @@ function createDelegateOptions(config: TackConfig): DelegateOptions | undefined 
     }),
     ...(delegate.replans !== undefined ? { replans: delegate.replans } : {})
   };
+}
+
+/**
+ * Build the pre-run typechecker. On by default (`mode: "error"`); a `typecheck`
+ * block in the config can set `warn`/`off`. Any failure to construct the checker
+ * degrades to "off" with a warning — a missing checker never blocks execution.
+ */
+function createTypecheckOptions(
+  config: TackConfig,
+  manifest: TackManifest,
+  policy: OperationPolicy | undefined
+): CreateExecutionEngineOptions["typecheck"] {
+  const mode = config.typecheck?.mode ?? "error";
+  if (mode === "off") {
+    return undefined;
+  }
+  try {
+    return { checker: createTypeChecker({ manifest, ...(policy ? { policy } : {}) }), mode };
+  } catch (error) {
+    console.warn(`[tack] typecheck unavailable, running without it: ${error instanceof Error ? error.message : error}`);
+    return undefined;
+  }
 }
 
 function createAuditSink(config: TackConfig): ((event: ToolAuditEvent) => Promise<void>) | undefined {
@@ -590,6 +837,12 @@ function printExecutionResult(result: ExecutionResult, json: boolean): void {
     return;
   }
 
+  if (result.typeDiagnostics?.length) {
+    const heading = result.error?.phase === "typecheck"
+      ? "Type error — nothing ran:"
+      : `${result.typeDiagnostics.length} type warning(s):`;
+    console.error(`${heading}\n${formatTypeDiagnostics(result.typeDiagnostics)}`);
+  }
   for (const value of result.emitted) {
     console.log(formatExecutionValue(value));
   }
@@ -598,7 +851,7 @@ function printExecutionResult(result: ExecutionResult, json: boolean): void {
   }
   if (result.ok && "result" in result) {
     console.log(formatExecutionValue(result.result));
-  } else if (result.error) {
+  } else if (result.error && result.error.phase !== "typecheck") {
     console.error(`${result.error.phase}: ${result.error.message}`);
   }
 }

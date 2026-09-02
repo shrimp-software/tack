@@ -16,6 +16,7 @@ import {
   createExecutionEngine,
   findGuide,
   formatTraceLine,
+  formatTypeDiagnostics,
   isTackRef,
   renderGuideIndex,
   searchOperations,
@@ -55,6 +56,8 @@ export interface CreateTackAgentServerOptions {
    * Omitted → the tool isn't registered. Provider credentials live in the planner.
    */
   readonly delegate?: DelegateOptions | undefined;
+  /** Pre-run typecheck. `mode: "error"` blocks a cell on any diagnostic. */
+  readonly typecheck?: CreateExecutionEngineOptions["typecheck"];
 }
 
 /** MCP tool-name grammar. Namespace slugs already conform; skip any that don't. */
@@ -68,13 +71,15 @@ export function createTackAgentServer(
   const codeRuntime = ownField(options, "codeRuntime") as CodeRuntime;
   const policy = ownField(options, "policy") as OperationPolicy | undefined;
   const onAuditEvent = ownField(options, "onAuditEvent") as CreateTackAgentServerOptions["onAuditEvent"];
+  const typecheck = ownField(options, "typecheck") as CreateTackAgentServerOptions["typecheck"];
   const sessionsAllowed = ownField(options, "sessions") !== false;
   const engineOptions: CreateExecutionEngineOptions = {
     manifest,
     runtime,
     codeRuntime,
     ...(policy ? { policy } : {}),
-    ...(onAuditEvent ? { onAuditEvent } : {})
+    ...(onAuditEvent ? { onAuditEvent } : {}),
+    ...(typecheck ? { typecheck } : {})
   };
   const engine = createExecutionEngine(engineOptions);
   const sessions = new SessionStore(engine);
@@ -122,12 +127,19 @@ export function createTackAgentServer(
         fresh: z
           .boolean()
           .optional()
-          .describe("Start the connection's persistent session from a clean scope.")
+          .describe("Start the connection's persistent session from a clean scope."),
+        typecheck: z
+          .enum(["error", "warn", "off"])
+          .optional()
+          .describe("Override this server's pre-run typecheck for this cell.")
       })
     },
-    async ({ code, session, fresh }, ctx) => {
+    async ({ code, session, fresh, typecheck: typecheckMode }, ctx) => {
       const onTrace = progressTraceSink(ctx);
-      const execOptions = onTrace ? { onTrace } : undefined;
+      const execOptions =
+        onTrace || typecheckMode
+          ? { ...(onTrace ? { onTrace } : {}), ...(typecheckMode ? { typecheck: typecheckMode } : {}) }
+          : undefined;
       try {
         if (session !== undefined) {
           if (!sessionsSupported) {
@@ -148,7 +160,7 @@ export function createTackAgentServer(
         }
 
         const perCall = onTrace ? createExecutionEngine({ ...engineOptions, onTrace }) : engine;
-        return formatExecuteMcpResult(await perCall.execute(code));
+        return formatExecuteMcpResult(await perCall.execute(code, execOptions));
       } catch {
         return formatExecuteMcpResult(sessionError("Internal execute error"));
       }
@@ -412,6 +424,7 @@ type ExecuteMcpStructuredContent =
     readonly session?: string | undefined;
     readonly emitted?: number | undefined;
     readonly logs: readonly string[];
+    readonly typeDiagnostics?: ExecutionResult["typeDiagnostics"];
   }
   | {
     readonly status: "error";
@@ -419,6 +432,7 @@ type ExecuteMcpStructuredContent =
     readonly session?: string | undefined;
     readonly emitted?: number | undefined;
     readonly logs: readonly string[];
+    readonly typeDiagnostics?: ExecutionResult["typeDiagnostics"];
   };
 
 function formatExecuteMcpResult(result: ExecutionResult, session?: string): {
@@ -442,6 +456,7 @@ function formatExecuteMcpResult(result: ExecutionResult, session?: string): {
 function executeStructuredContent(result: ExecutionResult, session?: string): ExecuteMcpStructuredContent {
   const emitted = result.emitted.length > 0 ? { emitted: result.emitted.length } : {};
   const sessionField = session !== undefined ? { session } : {};
+  const diagnostics = result.typeDiagnostics?.length ? { typeDiagnostics: result.typeDiagnostics } : {};
   if (!result.ok) {
     return {
       status: "error",
@@ -451,6 +466,7 @@ function executeStructuredContent(result: ExecutionResult, session?: string): Ex
       },
       ...sessionField,
       ...emitted,
+      ...diagnostics,
       logs: result.logs
     };
   }
@@ -460,6 +476,7 @@ function executeStructuredContent(result: ExecutionResult, session?: string): Ex
     result: "result" in result ? result.result ?? null : null,
     ...sessionField,
     ...emitted,
+    ...diagnostics,
     logs: result.logs
   };
 }
@@ -478,18 +495,28 @@ function emittedContent(value: unknown): ContentBlock[] {
 
 function executionText(result: ExecutionResult, emittedCount: number): string | undefined {
   const parts: string[] = [];
-  if (result.error) {
+  if (result.error?.phase === "typecheck") {
+    parts.push(`Type error — nothing ran. Fix and resubmit:\n${result.error.message}`);
+  } else if (result.error) {
     parts.push(truncatePreview(`Error: ${result.error.phase}: ${result.error.message}`, MAX_PREVIEW_CHARS, previewSuffix));
-  } else if (emittedCount === 0 && isTackRef(result.result)) {
-    const ref = result.result;
-    parts.push(
-      `\`${ref.__tackRef}\` — ${ref.type}\n${truncatePreview(valueText(ref.preview), MAX_PREVIEW_CHARS, previewSuffix)}\n` +
-        `(retained; use \`${ref.__tackRef}\` in the next cell, or deref({ session, ref: "${ref.__tackRef}" }))`
-    );
-  } else if (emittedCount === 0 && "result" in result) {
-    parts.push(truncatePreview(valueText(result.result), MAX_PREVIEW_CHARS, previewSuffix));
-  } else if (emittedCount === 0) {
-    parts.push("(no result)");
+  } else {
+    if (result.typeDiagnostics?.length) {
+      parts.push(
+        `⚠ ${result.typeDiagnostics.length} type warning(s) — ran anyway:\n` +
+          formatTypeDiagnostics(result.typeDiagnostics)
+      );
+    }
+    if (emittedCount === 0 && isTackRef(result.result)) {
+      const ref = result.result;
+      parts.push(
+        `\`${ref.__tackRef}\` — ${ref.type}\n${truncatePreview(valueText(ref.preview), MAX_PREVIEW_CHARS, previewSuffix)}\n` +
+          `(retained; use \`${ref.__tackRef}\` in the next cell, or deref({ session, ref: "${ref.__tackRef}" }))`
+      );
+    } else if (emittedCount === 0 && "result" in result) {
+      parts.push(truncatePreview(valueText(result.result), MAX_PREVIEW_CHARS, previewSuffix));
+    } else if (emittedCount === 0) {
+      parts.push("(no result)");
+    }
   }
 
   if (result.logs.length > 0) {

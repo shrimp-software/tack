@@ -22,6 +22,8 @@ interface OperationTool {
   readonly description?: string | undefined;
   readonly inputSchema: JsonSchema;
   readonly outputSchema?: JsonSchema | undefined;
+  /** Explicit operation path from the manifest — bypasses name inference. */
+  readonly path?: readonly string[] | undefined;
 }
 
 const SPLIT_DISCRIMINATORS = ["operation", "action"] as const;
@@ -116,8 +118,19 @@ function toOperationTool(tool: unknown): OperationTool[] {
     upstreamName,
     description: typeof description === "string" ? description : undefined,
     inputSchema,
-    outputSchema: schemaRecord(record["outputSchema"])
+    outputSchema: schemaRecord(record["outputSchema"]),
+    path: explicitPath(record["path"])
   }];
+}
+
+/** A manifest tool's explicit `path`, accepted only as a non-empty array of
+ *  non-empty strings — otherwise the operation planner infers a path. */
+function explicitPath(value: unknown): readonly string[] | undefined {
+  return Array.isArray(value) &&
+    value.length > 0 &&
+    value.every((segment) => typeof segment === "string" && segment.length > 0)
+    ? [...(value as string[])]
+    : undefined;
 }
 
 function compareToolsForOperationPlanning(left: OperationTool, right: OperationTool): number {
@@ -232,6 +245,18 @@ function schemaRequiresProperty(
 }
 
 function operationVariants(tool: OperationTool): OperationVariant[] {
+  // An explicit path is authoritative: exactly one operation, no name inference
+  // and no discriminator fan-out. Plugin sources rely on this to place tools at
+  // `mcp.<server>.<op>` / `<skill>`.
+  if (tool.path && tool.path.length > 0) {
+    const path = [...tool.path];
+    return [{
+      sdkName: path.at(-1) ?? tool.sdkName,
+      path,
+      inputSchema: tool.inputSchema
+    }];
+  }
+
   const splitBy = inferredSplitBy(tool.inputSchema);
   if (!splitBy) {
     const path = inferOperationPath(tool);
@@ -269,6 +294,9 @@ function inferredSplitBy(schema: JsonSchema): string | undefined {
 }
 
 function inferOperationPath(tool: OperationTool): string[] {
+  if (tool.path && tool.path.length > 0) {
+    return [...tool.path];
+  }
   return inferredSplitBy(tool.inputSchema)
     ? inferSplitBasePath(tool)
     : inferUnsplitPath(tool);

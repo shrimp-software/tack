@@ -10,6 +10,7 @@ import {
   createExecutionEngine,
   searchOperations,
   type CodeRuntime,
+  type CreateExecutionEngineOptions,
   type OperationPolicy,
   type ToolAuditEvent
 } from "@tack/codemode";
@@ -36,6 +37,7 @@ export interface CreateTackHttpServiceOptions {
   readonly maxRequestBytes?: number | undefined;
   readonly rateLimit?: ServiceRateLimit | undefined;
   readonly onAuditEvent?: ((event: ServiceAuditEvent) => void | Promise<void>) | undefined;
+  readonly typecheck?: CreateExecutionEngineOptions["typecheck"];
 }
 
 export interface TackHttpListenOptions {
@@ -81,6 +83,7 @@ interface ServiceContext {
   readonly policy?: OperationPolicy | undefined;
   readonly maxRequestBytes: number;
   readonly onAuditEvent?: CreateTackHttpServiceOptions["onAuditEvent"] | undefined;
+  readonly typecheck?: CreateExecutionEngineOptions["typecheck"];
 }
 
 function createTackHttpService(
@@ -182,7 +185,8 @@ async function handleRequest(
         runtime: context.runtime,
         codeRuntime: context.codeRuntime,
         ...(policy ? { policy } : {}),
-        ...(onAuditEvent ? { onAuditEvent } : {})
+        ...(onAuditEvent ? { onAuditEvent } : {}),
+        ...(context.typecheck ? { typecheck: context.typecheck } : {})
       });
       const result = await engine.execute(code);
       writeJson(response, result.ok ? 200 : 400, result);
@@ -209,6 +213,7 @@ async function handleRequest(
 function normalizeServiceContext(options: CreateTackHttpServiceOptions): ServiceContext {
   const policy = ownField<OperationPolicy>(options, "policy");
   const onAuditEvent = ownField<CreateTackHttpServiceOptions["onAuditEvent"]>(options, "onAuditEvent");
+  const typecheck = ownField<CreateTackHttpServiceOptions["typecheck"]>(options, "typecheck");
   return {
     manifest: ownField<TackManifest>(options, "manifest") as TackManifest,
     runtime: ownField<TackRuntime>(options, "runtime") as TackRuntime,
@@ -216,7 +221,8 @@ function normalizeServiceContext(options: CreateTackHttpServiceOptions): Service
     users: optionUsers(options).map(normalizeServiceUser),
     ...(policy ? { policy } : {}),
     maxRequestBytes: ownField<number>(options, "maxRequestBytes") ?? DEFAULT_MAX_REQUEST_BYTES,
-    ...(onAuditEvent ? { onAuditEvent } : {})
+    ...(onAuditEvent ? { onAuditEvent } : {}),
+    ...(typecheck ? { typecheck } : {})
   };
 }
 
