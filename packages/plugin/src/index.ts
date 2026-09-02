@@ -36,3 +36,4 @@ export {
 
 // Config desugaring — `plugins` block → synthetic `plugin` sources.
 export { resolvePluginsIntoConfig, type ResolvePluginsOptions } from "./resolve.js";
+export { createPluginMount, type PluginMount } from "./mount.js";

@@ -10,7 +10,7 @@ import {
 import { createMcpToolRuntime } from "@tack/mcp";
 
 import { readPluginLayout, type PluginSkill } from "./layout.js";
-import { resolveServerSegments, resolveSkillNames } from "./names.js";
+import { createPluginMount } from "./mount.js";
 import { readSkillData } from "./skill.js";
 
 export interface CreatePluginToolRuntimeOptions {
@@ -37,15 +37,15 @@ export async function createPluginToolRuntime(
   const pluginPath = serverId
     ? ownField<string>(ownField(config.servers, serverId), "path")
     : undefined;
-  const layout = pluginPath ? await readPluginLayout(pluginPath) : undefined;
+  const mount = pluginPath ? createPluginMount(await readPluginLayout(pluginPath)) : undefined;
 
   const skillByName = new Map<string, PluginSkill>();
   const mcpServers: Record<string, TackConfig["servers"][string]> = {};
-  if (layout) {
-    for (const [skill, name] of resolveSkillNames(layout.skills)) {
+  if (mount) {
+    for (const { skill, name } of mount.skills) {
       skillByName.set(name, skill);
     }
-    for (const [server, segment] of resolveServerSegments(layout.mcpServers)) {
+    for (const { server, segment } of mount.mcpServers) {
       mcpServers[segment] = server.config;
     }
   }

@@ -41,6 +41,7 @@
         "@tack/codemode": "workspace:*",
         "@tack/core": "workspace:*",
         "@tack/generator": "workspace:*",
+        "@tack/plugin": "workspace:*",
         "@tack/runtime-quickjs": "workspace:*",
         "@tack/runtime-workerd": "workspace:*",
         "@tack/service": "workspace:*",
@@ -99,6 +100,19 @@
       },
       "devDependencies": {
         "@modelcontextprotocol/server": "2.0.0-beta.5",
+        "typescript": "^7.0.2",
+        "vitest": "^4.1.10",
+      },
+    },
+    "packages/plugin": {
+      "name": "@tack/plugin",
+      "version": "0.1.0",
+      "dependencies": {
+        "@tack/core": "workspace:*",
+        "@tack/mcp": "workspace:*",
+        "zod": "^4.4.3",
+      },
+      "devDependencies": {
         "typescript": "^7.0.2",
         "vitest": "^4.1.10",
       },
@@ -165,6 +179,7 @@
       "dependencies": {
         "@tack/core": "workspace:*",
         "@tack/mcp": "workspace:*",
+        "@tack/plugin": "workspace:*",
         "zod": "^4.4.3",
       },
       "devDependencies": {
@@ -331,6 +346,8 @@
     "@tack/generator": ["@tack/generator@workspace:packages/generator"],
 
     "@tack/mcp": ["@tack/mcp@workspace:packages/mcp"],
+
+    "@tack/plugin": ["@tack/plugin@workspace:packages/plugin"],
 
     "@tack/runtime-quickjs": ["@tack/runtime-quickjs@workspace:packages/runtime-quickjs"],
 

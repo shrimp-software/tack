@@ -75,6 +75,16 @@ async function resolvePluginPath(
       pluginName: name
     });
   }
+  if (
+    locked.source !== parsed.source ||
+    locked.ref !== parsed.ref ||
+    locked.subdir !== parsed.subdir
+  ) {
+    throw new TackPluginError({
+      message: `Plugin "${name}" does not match its tack.plugins.lock entry — run \`tack plugins update ${name}\``,
+      pluginName: name
+    });
+  }
 
   return ensureCheckout({
     ref: parsed,

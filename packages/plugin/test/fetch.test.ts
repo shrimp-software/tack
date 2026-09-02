@@ -84,4 +84,12 @@ describe("ensureCheckout", () => {
     expect(second).toBe(first);
     expect((await stat(second)).mtimeMs).toBe(before);
   }, 20_000);
+
+  it("rejects a fallback fetch that does not produce the locked commit", async () => {
+    await expect(ensureCheckout({
+      ref: gitRef("v1"),
+      commit: "a".repeat(40),
+      cacheRoot: join(tmp, "cache-wrong-commit")
+    })).rejects.toThrow(/expected locked commit/);
+  }, 20_000);
 });

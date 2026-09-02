@@ -67,6 +67,21 @@ describe("resolvePluginsIntoConfig", () => {
     );
   });
 
+  it("rejects a git plugin whose config no longer matches its lock entry", async () => {
+    await writeLock(join(tmp, "tack.plugins.lock"), {
+      version: 1,
+      plugins: {
+        acme: { source: "github:acme/tools", ref: "v1", resolvedCommit: "a".repeat(40) }
+      }
+    });
+    const config: TackConfig = {
+      servers: {},
+      plugins: { acme: { source: "github:acme/tools", ref: "v2" } }
+    };
+
+    await expect(resolvePluginsIntoConfig(config, { configDir: tmp })).rejects.toThrow(/does not match/);
+  });
+
   it("checks out a git plugin pinned by the lockfile", async () => {
     const bare = await makeBareRepo(tmp);
     // (git clone/fetch — allow extra time)

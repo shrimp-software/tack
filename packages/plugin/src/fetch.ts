@@ -71,6 +71,12 @@ export async function ensureCheckout({ ref, commit, cacheRoot }: EnsureCheckoutI
       git(["fetch", "--depth", "1", "--quiet", "origin", ref.ref], dir)
     );
     await git(["checkout", "--quiet", "FETCH_HEAD"], dir);
+    const actual = await git(["rev-parse", "HEAD"], dir);
+    if (actual.toLowerCase() !== commit.toLowerCase()) {
+      throw new TackPluginError({
+        message: `Fetched ${actual} for ${ref.cloneUrl}@${ref.ref}, expected locked commit ${commit}`
+      });
+    }
   }
 
   if (ref.subdir && !(await exists(root))) {
