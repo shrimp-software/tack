@@ -1,6 +1,6 @@
 # Tack
 
-Tack turns live sources — MCP servers and local TypeScript modules — into agent-friendly TypeScript tools. It discovers tools, infers stable operation paths, generates a typed SDK, and exposes `execute` and `guide` over MCP.
+Tack turns live sources — MCP servers, local TypeScript modules, and plugin bundles — into agent-friendly TypeScript tools. It discovers tools, infers stable operation paths, generates a typed SDK, and exposes `execute` and `guide` over MCP.
 
 The SDK target is TypeScript only. Code mode runs on QuickJS by default, with workerd available as an optional runtime.
 
@@ -10,8 +10,11 @@ The SDK target is TypeScript only. Code mode runs on QuickJS by default, with wo
 | --- | --- |
 | `@tack/core` | Config, manifests, operation planning, shared safe-data helpers |
 | `@tack/mcp` | MCP discovery and invocation |
-| `@tack/sources` | Source dispatch (MCP + module sources), `defineTool` authoring API |
+| `@tack/sources` | Source dispatch (MCP, module, and plugin sources), `defineTool` authoring API |
+| `@tack/plugin` | Plugin-bundle discovery, git fetching, lockfiles, skills, and bundled MCP servers |
 | `@tack/generator` | TypeScript SDK and docs generation |
+| `@tack/sdk-types` | Schema compilation and typed SDK declaration generation |
+| `@tack/typecheck` | Type checking for code-mode programs |
 | `@tack/codemode` | Search, describe, execution engine, runtime helpers |
 | `@tack/runtime-quickjs` | Default isolated runtime |
 | `@tack/runtime-workerd` | Optional process-isolated runtime |
@@ -39,11 +42,15 @@ bun run --cwd packages/cli dev -- --help
 ```sh
 bun run --cwd packages/cli dev -- init
 bun run --cwd packages/cli dev -- inspect
+bun run --cwd packages/cli dev -- doctor
 bun run --cwd packages/cli dev -- generate
 bun run --cwd packages/cli dev -- docs
 bun run --cwd packages/cli dev -- build
 bun run --cwd packages/cli dev -- call <operation.path> --json '{}'
 bun run --cwd packages/cli dev -- execute --file probe.ts
+bun run --cwd packages/cli dev -- skill install
+bun run --cwd packages/cli dev -- plugins add github:owner/plugin --ref v1.0.0
+bun run --cwd packages/cli dev -- plugins list
 bun run --cwd packages/cli dev -- mcp
 bun run --cwd packages/cli dev -- host --host 127.0.0.1 --port 8788
 bun run --cwd packages/cli dev -- serve
@@ -85,10 +92,11 @@ The `service` block is only needed for bearer-protected `host` or for `serve`.
 
 ## Sources
 
-Every `servers` entry is a **source**. Two transports are supported:
+Every `servers` entry is a **source**. Tack supports these source types:
 
 - `stdio` / `http` — an MCP server, discovered live.
 - `module` — a local TypeScript file that exports tools. `entry` is resolved relative to the config file.
+- `plugin` — a plugin bundle, normally created from the top-level `plugins` block rather than written directly.
 
 ```json
 {
@@ -121,6 +129,18 @@ Module sources run in the host process with full authority — unlike code mode,
 Running `.ts` entries needs a TypeScript-aware runtime: `tack` under `tsx`/`bun`, or Node 22.18+ with type stripping. `.js` / `.mjs` entries work everywhere.
 
 A worked example lives at `packages/sources/examples/markdown-source.ts` (serve a folder of markdown files as `list` / `read` tools); `packages/agent/test/module-source.e2e.test.ts` registers it and drives it end-to-end over MCP.
+
+## Plugins
+
+Plugins are mounted under one namespace and can contribute skills plus bundled MCP servers. Add a local plugin or a git-pinned plugin with the CLI:
+
+```sh
+tack plugins add ./my-plugin
+tack plugins add github:owner/plugin --ref v1.0.0 --as acme
+tack plugins update
+```
+
+This writes a top-level `plugins` block to `tack.config.json`. Git plugins are resolved to a commit, cached under `.tack/plugins/`, and recorded in `tack.plugins.lock`; local plugins are used from their configured path. A plugin directory contains `.claude-plugin/plugin.json`, with optional `skills/<name>/SKILL.md` files and an optional `.mcp.json` containing `mcpServers`.
 
 ## Notes
 
