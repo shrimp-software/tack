@@ -861,6 +861,12 @@ function restoreEnv(name: string, value: string | undefined): void {
   process.env[name] = value;
 }
 
+function hasStatelessMeta(params: Record<string, unknown> | undefined): boolean {
+  const meta = params?._meta;
+  return typeof meta === "object" && meta !== null &&
+    (meta as Record<string, unknown>)["io.modelcontextprotocol/protocolVersion"] === "2026-07-28";
+}
+
 async function startFakeHttpMcpServer(): Promise<{
   readonly url: string;
   readonly close: () => Promise<void>;
@@ -979,12 +985,6 @@ async function handleFakeHttpMcpRequest(
     return;
   }
 
-  if (request.method === "DELETE") {
-    response.writeHead(204);
-    response.end();
-    return;
-  }
-
   if (request.method !== "POST" || request.url !== "/mcp") {
     response.writeHead(404);
     response.end();
@@ -992,38 +992,13 @@ async function handleFakeHttpMcpRequest(
   }
 
   const message = await readJson(request);
-  if (!("id" in message)) {
-    response.writeHead(202);
-    response.end();
-    return;
-  }
-
-  if (message.method === "initialize") {
-    response.setHeader("mcp-session-id", "session-1");
-    writeJson(response, 200, {
-      jsonrpc: "2.0",
-      id: message.id,
-      result: {
-        protocolVersion: "2025-11-25",
-        capabilities: {
-          tools: {
-            listChanged: true
-          }
-        },
-        serverInfo: {
-          name: "fake-http",
-          version: "1.0.0"
-        }
-      }
-    });
-    return;
-  }
-
-  if (request.headers["mcp-session-id"] !== "session-1") {
+  if (request.headers["mcp-protocol-version"] !== "2026-07-28" ||
+      request.headers["mcp-method"] !== message.method ||
+      !hasStatelessMeta(message.params)) {
     writeJson(response, 400, {
       jsonrpc: "2.0",
       id: message.id,
-      error: { code: -32002, message: "missing session" }
+      error: { code: -32020, message: "invalid stateless request" }
     });
     return;
   }
@@ -1063,6 +1038,10 @@ async function handleFakeHttpMcpRequest(
 
   if (message.method === "tools/call") {
     const params = message.params;
+    if (request.headers["mcp-name"] !== params?.name) {
+      writeJson(response, 400, { jsonrpc: "2.0", id: message.id, error: { code: -32020, message: "tool header mismatch" } });
+      return;
+    }
     if (params?.name === "add") {
       const args = params.arguments ?? {};
       writeJson(response, 200, {

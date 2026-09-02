@@ -7,33 +7,21 @@ import {
 
 import type { McpClient } from "./client.js";
 
-const MCP_PROTOCOL_VERSION = "2025-11-25";
+const MCP_PROTOCOL_VERSION = "2026-07-28";
+const CLIENT_INFO = { name: "tack", version: "1.0.1" } as const;
 
 type HttpServerConfig = Extract<TackServerConfig, { readonly transport: "http" }>;
 
 export class StreamableHttpMcpClient implements McpClient {
   private nextId = 1;
-  private sessionId: string | undefined;
-  private protocolVersion = MCP_PROTOCOL_VERSION;
   private readonly config: HttpServerConfig;
 
   constructor(config: HttpServerConfig) {
     this.config = normalizeHttpServerConfig(config);
   }
 
-  async connect(): Promise<void> {
-    const initialized = await this.request("initialize", {
-      protocolVersion: MCP_PROTOCOL_VERSION,
-      capabilities: {},
-      clientInfo: {
-        name: "tack",
-        version: "0.1.0"
-      }
-    }, { includeProtocolVersion: false });
-
-    this.protocolVersion = readProtocolVersion(initialized) ?? this.protocolVersion;
-    await this.notification("notifications/initialized", {});
-  }
+  /** Stateless MCP has no transport handshake. */
+  async connect(): Promise<void> {}
 
   async listTools(): Promise<{ readonly tools: readonly unknown[] }> {
     const tools: unknown[] = [];
@@ -62,43 +50,15 @@ export class StreamableHttpMcpClient implements McpClient {
     return this.request("tools/call", {
       name,
       arguments: sanitizeRecord(ownField(input, "arguments"))
-    });
+    }, { toolName: name });
   }
 
-  async close(): Promise<void> {
-    if (!this.sessionId) {
-      return;
-    }
-
-    await fetch(this.config.url, {
-      method: "DELETE",
-      headers: this.headers({ accept: "application/json" })
-    }).catch(() => undefined);
-  }
-
-  private async notification(method: string, params: Record<string, unknown>): Promise<void> {
-    const response = await fetch(this.config.url, {
-      method: "POST",
-      headers: this.headers({
-        accept: "application/json, text/event-stream",
-        contentType: "application/json"
-      }),
-      body: JSON.stringify({
-        jsonrpc: "2.0",
-        method,
-        params
-      })
-    });
-
-    if (!response.ok && response.status !== 202) {
-      throw new Error(`MCP HTTP notification ${method} failed with HTTP ${response.status}: ${await response.text()}`);
-    }
-  }
+  async close(): Promise<void> {}
 
   private async request(
     method: string,
     params: Record<string, unknown>,
-    options: { readonly includeProtocolVersion?: boolean } = {}
+    options: { readonly toolName?: string | undefined } = {}
   ): Promise<unknown> {
     const id = this.nextId++;
     const response = await fetch(this.config.url, {
@@ -106,20 +66,23 @@ export class StreamableHttpMcpClient implements McpClient {
       headers: this.headers({
         accept: "application/json, text/event-stream",
         contentType: "application/json",
-        includeProtocolVersion: options.includeProtocolVersion ?? true
+        method,
+        ...(options.toolName ? { toolName: options.toolName } : {})
       }),
       body: JSON.stringify({
         jsonrpc: "2.0",
         id,
         method,
-        params
+        params: {
+          ...params,
+          _meta: {
+            "io.modelcontextprotocol/protocolVersion": MCP_PROTOCOL_VERSION,
+            "io.modelcontextprotocol/clientCapabilities": {},
+            "io.modelcontextprotocol/clientInfo": CLIENT_INFO
+          }
+        }
       })
     });
-
-    const sessionId = response.headers.get("mcp-session-id");
-    if (sessionId) {
-      this.sessionId = sessionId;
-    }
 
     return readJsonRpcResult(await readJsonRpcResponse(response, id), method);
   }
@@ -127,19 +90,17 @@ export class StreamableHttpMcpClient implements McpClient {
   private headers(input: {
     readonly accept: string;
     readonly contentType?: string | undefined;
-    readonly includeProtocolVersion?: boolean | undefined;
+    readonly method: string;
+    readonly toolName?: string | undefined;
   }): Headers {
     const headers = new Headers(resolveHeaderValues(this.config.headers ?? {}));
     headers.set("accept", input.accept);
     if (input.contentType) {
       headers.set("content-type", input.contentType);
     }
-    if (this.sessionId) {
-      headers.set("mcp-session-id", this.sessionId);
-    }
-    if (input.includeProtocolVersion !== false) {
-      headers.set("mcp-protocol-version", this.protocolVersion);
-    }
+    headers.set("mcp-protocol-version", MCP_PROTOCOL_VERSION);
+    headers.set("mcp-method", input.method);
+    if (input.toolName) headers.set("mcp-name", input.toolName);
     return headers;
   }
 }
@@ -219,11 +180,6 @@ function parseSseJsonMessages(text: string): unknown[] {
   }
 
   return messages;
-}
-
-function readProtocolVersion(result: unknown): string | undefined {
-  const protocolVersion = asRecord(result)?.["protocolVersion"];
-  return typeof protocolVersion === "string" ? protocolVersion : undefined;
 }
 
 function asRecord(value: unknown): Record<string, unknown> | undefined {
