@@ -1,6 +1,6 @@
 {
   "name": "@cbxss/tack",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "type": "module",
   "bin": {
     "tack": "dist/index.js"
@@ -25,11 +25,11 @@
     "@cbxss/tack-codemode": "1.0.0",
     "@cbxss/tack-core": "1.0.0",
     "@cbxss/tack-generator": "1.0.0",
-    "@cbxss/tack-plugin": "1.0.1",
+    "@cbxss/tack-plugin": "1.0.2",
     "@cbxss/tack-runtime-quickjs": "1.0.0",
     "@cbxss/tack-runtime-workerd": "1.0.0",
     "@cbxss/tack-service": "1.0.0",
-    "@cbxss/tack-sources": "1.0.1",
+    "@cbxss/tack-sources": "1.0.2",
     "@cbxss/tack-typecheck": "1.0.0",
     "commander": "^15.0.0"
   },
