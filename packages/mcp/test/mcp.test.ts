@@ -423,7 +423,10 @@ describe("MCP adapter", () => {
     const runtime = await createMcpRuntime({ config, manifest });
 
     try {
-      await expect(runtime.invoke("flaky.echo", { message: "first" })).rejects.toThrow();
+      await expect(runtime.invoke("flaky.echo", { message: "first" })).rejects.toMatchObject({
+        message: "Failed to connect to MCP server flaky",
+        serverId: "flaky"
+      });
 
       const result = await runtime.invoke("flaky.echo", { message: "second" });
       expect(result.structuredContent).toEqual({ message: "second" });

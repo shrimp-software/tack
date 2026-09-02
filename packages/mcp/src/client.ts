@@ -52,11 +52,13 @@ export async function getConnection(
     throw serverConfig.error;
   }
 
-  const pending = openConnection(serverConfig.config).catch((error) => {
-    if (connections.get(serverId) === pending) {
-      connections.delete(serverId);
-    }
-    throw error;
+  const pending = openConnection(serverConfig.config).catch((cause) => {
+    if (connections.get(serverId) === pending) connections.delete(serverId);
+    throw new TackRuntimeError({
+      message: `Failed to connect to MCP server ${serverId}`,
+      serverId,
+      cause
+    });
   });
   connections.set(serverId, pending);
   return pending;

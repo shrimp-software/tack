@@ -112,7 +112,6 @@ export async function createMcpToolRuntime(
       }
 
       const connection = await getConnection(connections, binding.serverId, serverConfigs);
-
       try {
         const raw = await connection.client.callTool({
           name: binding.upstreamName,
