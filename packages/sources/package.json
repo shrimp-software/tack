@@ -1,6 +1,6 @@
 {
   "name": "@cbxss/tack-sources",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "type": "module",
   "exports": {
     ".": {
@@ -18,8 +18,8 @@
   },
   "dependencies": {
     "@cbxss/tack-core": "1.0.0",
-    "@cbxss/tack-mcp": "1.0.0",
-    "@cbxss/tack-plugin": "1.0.0",
+    "@cbxss/tack-mcp": "1.0.1",
+    "@cbxss/tack-plugin": "1.0.1",
     "zod": "^4.4.3"
   },
   "devDependencies": {

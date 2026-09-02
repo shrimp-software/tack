@@ -1,6 +1,6 @@
 {
   "name": "@cbxss/tack-agent",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "type": "module",
   "exports": {
     ".": {
@@ -24,7 +24,7 @@
   },
   "devDependencies": {
     "@cbxss/tack-runtime-quickjs": "1.0.0",
-    "@cbxss/tack-sources": "1.0.0",
+    "@cbxss/tack-sources": "1.0.1",
     "@cbxss/tack-typecheck": "1.0.0",
     "@modelcontextprotocol/client": "2.0.0-beta.5",
     "typescript": "^7.0.2",
