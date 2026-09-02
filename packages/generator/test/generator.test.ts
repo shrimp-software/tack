@@ -5,7 +5,7 @@ import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
 
-import { buildManifest, type TackConfig, type TackManifest } from "@tack/core";
+import { buildManifest, type TackConfig, type TackManifest } from "@cbxss/tack-core";
 import { generateDocsPromise, generateSdkPromise } from "../src/index.js";
 
 const generatorTestDir = dirname(fileURLToPath(import.meta.url));
@@ -272,9 +272,9 @@ describe("generateSdk", () => {
     expect(index).toContain("function ownDataRuntime(runtime: TackRuntime): TackRuntime");
     expect(index).not.toContain("options.config");
     expect(index).not.toContain("options.configPath");
-    expect(index).toContain('const { createRuntime } = await import("@tack/sources");');
+    expect(index).toContain('const { createRuntime } = await import("@cbxss/tack-sources");');
     expect(index).toContain("createRuntime({ config, manifest })");
-    expect(index).not.toContain('import { createRuntime } from "@tack/sources";');
+    expect(index).not.toContain('import { createRuntime } from "@cbxss/tack-sources";');
     expect(index).not.toContain("discoverManifest");
     expect(index).not.toContain("FakeActivitiesAddToIncidentInput");
     expect(index).not.toContain("Add activity to an incident.");
@@ -300,7 +300,7 @@ describe("generateSdk", () => {
 
     await writeFile(join(tmpPath, "usage.generated.ts"), [
       'import { createFakeClient, createTackClientFromRuntime, type FakeClient, type FakeActivitiesAddToIncidentInput, type TackClient } from "./index.js";',
-      'import type { TackRuntime } from "@tack/core";',
+      'import type { TackRuntime } from "@cbxss/tack-core";',
       "",
       "const runtime: TackRuntime = {",
       "  invoke: async () => ({",
@@ -436,7 +436,7 @@ describe("generateSdk", () => {
     await writeFile(join(tmpPath, "runtime.generated.ts"), [
       'import { createFakeClient, createTackClientFromRuntime } from "./index.js";',
       'import type { FakeRulesListInput } from "./index.js";',
-      'import type { TackRuntime } from "@tack/core";',
+      'import type { TackRuntime } from "@cbxss/tack-core";',
       "",
       "const calls: Array<{ toolId: string; args: unknown }> = [];",
       "let closed = false;",
@@ -548,7 +548,7 @@ describe("generateSdk", () => {
     expect(fake).toContain("function withInjectedArgs");
     await writeFile(join(tmpPath, "proto-injected.generated.ts"), [
       'import { createTackClientFromRuntime } from "./index.js";',
-      'import type { TackRuntime } from "@tack/core";',
+      'import type { TackRuntime } from "@cbxss/tack-core";',
       "",
       "let invokedArgs: unknown;",
       "const runtime: TackRuntime = {",
@@ -657,7 +657,7 @@ describe("generateSdk", () => {
     expect(types).not.toContain("operation:");
     await writeFile(join(tmpPath, "split-branch.generated.ts"), [
       'import { createTackClientFromRuntime } from "./index.js";',
-      'import type { TackRuntime } from "@tack/core";',
+      'import type { TackRuntime } from "@cbxss/tack-core";',
       "",
       "const runtime: TackRuntime = {",
       "  invoke: async () => ({",
@@ -724,7 +724,7 @@ describe("generateSdk", () => {
     expect(fake).toContain('"then2"(args?: FakeThen2Input)');
     await writeFile(join(tmpPath, "thenable.generated.ts"), [
       'import { createFakeClient } from "./index.js";',
-      'import type { TackRuntime } from "@tack/core";',
+      'import type { TackRuntime } from "@cbxss/tack-core";',
       "",
       "const calls: Array<{ toolId: string; args: unknown }> = [];",
       "const runtime: TackRuntime = {",
@@ -915,7 +915,7 @@ describe("generateSdk", () => {
     await generateSdkPromise({ manifest, outDir: tmpPath });
 
     const types = await readFile(join(tmpPath, "types.ts"), "utf8");
-    expect(types).not.toContain('import type { TackResult } from "@tack/core";');
+    expect(types).not.toContain('import type { TackResult } from "@cbxss/tack-core";');
     expect(types).not.toContain("export interface TackResult");
     expect(types).not.toContain("export interface FakeEchoResult");
     expect(types).not.toContain("export interface FakeClient");
@@ -924,7 +924,7 @@ describe("generateSdk", () => {
     expect(types).toContain("export interface FakeEchoInputTackResult");
     expect(types).toContain("export interface FakeEchoOutputFakeEchoInput");
     expect(types).toContain("title?: string;");
-    expect(types).toContain('export type FakeEchoResult = import("@tack/core").TackResult<FakeEchoOutput>;');
+    expect(types).toContain('export type FakeEchoResult = import("@cbxss/tack-core").TackResult<FakeEchoOutput>;');
     await expectGeneratedSdkToCompile(tmpPath);
   });
 
@@ -2383,7 +2383,7 @@ describe("generateSdk", () => {
     expect(server).toContain('"make"(args?: ConstructorMakeInput)');
     await writeFile(join(tmpPath, "prototype.generated.ts"), [
       'import { createTackClientFromRuntime } from "./index.js";',
-      'import type { TackRuntime } from "@tack/core";',
+      'import type { TackRuntime } from "@cbxss/tack-core";',
       "",
       "const runtime: TackRuntime = {",
       "  invoke: async () => ({",
@@ -2760,9 +2760,9 @@ async function expectGeneratedSdkToCompile(outDir: string): Promise<void> {
       noEmit: true,
       typeRoots: [join(repoRoot, "node_modules", "@types")],
       paths: {
-        "@tack/core": [relative(outDir, join(repoRoot, "packages", "core", "src", "index.ts"))],
-        "@tack/mcp": [relative(outDir, join(repoRoot, "packages", "mcp", "src", "index.ts"))],
-        "@tack/sources": [relative(outDir, join(repoRoot, "packages", "sources", "src", "index.ts"))]
+        "@cbxss/tack-core": [relative(outDir, join(repoRoot, "packages", "core", "src", "index.ts"))],
+        "@cbxss/tack-mcp": [relative(outDir, join(repoRoot, "packages", "mcp", "src", "index.ts"))],
+        "@cbxss/tack-sources": [relative(outDir, join(repoRoot, "packages", "sources", "src", "index.ts"))]
       }
     },
     include: [join(outDir, "*.ts")]

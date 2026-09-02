@@ -1,7 +1,7 @@
 import { Client } from "@modelcontextprotocol/client";
 import { InMemoryTransport } from "@modelcontextprotocol/server";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { createQuickJSRuntime } from "@tack/runtime-quickjs";
+import { createQuickJSRuntime } from "@cbxss/tack-runtime-quickjs";
 import { fakeRuntime, grafanaManifest } from "../../core/test/fixtures.js";
 
 import {

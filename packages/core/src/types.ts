@@ -48,7 +48,7 @@ export type TackServerConfig =
 /**
  * A top-level {@link TackConfig.plugins} entry: either a git repo pinned to a
  * ref (resolved to a commit and cached under `.tack/plugins/`) or a local
- * directory used in place. `@tack/plugin` resolves each of these into a
+ * directory used in place. `@cbxss/tack-plugin` resolves each of these into a
  * {@link PluginServerConfig} before discovery.
  */
 export type PluginRef =
@@ -62,9 +62,9 @@ export type PluginRef =
 export interface TackConfig {
   readonly servers: Readonly<Record<string, TackServerConfig>>;
   /**
-   * Plugin bundles to mount, each as one namespace. Resolved by `@tack/plugin`
+   * Plugin bundles to mount, each as one namespace. Resolved by `@cbxss/tack-plugin`
    * into synthetic `plugin` sources (added to {@link TackConfig.servers}) before
-   * discovery, so nothing downstream of `@tack/sources` sees this field.
+   * discovery, so nothing downstream of `@cbxss/tack-sources` sees this field.
    */
   readonly plugins?: Readonly<Record<string, PluginRef>> | undefined;
   readonly runtime?: {

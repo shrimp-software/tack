@@ -2,7 +2,7 @@ import { fileURLToPath } from "node:url";
 
 import { describe, expect, it } from "vitest";
 
-import type { PluginServerConfig } from "@tack/core";
+import type { PluginServerConfig } from "@cbxss/tack-core";
 
 import { discoverPluginServers } from "../src/discover.js";
 

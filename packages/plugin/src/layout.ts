@@ -5,7 +5,7 @@ import {
   TackPluginError,
   type HttpServerConfig,
   type StdioServerConfig
-} from "@tack/core";
+} from "@cbxss/tack-core";
 
 export interface PluginJson {
   readonly name: string;

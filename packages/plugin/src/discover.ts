@@ -5,8 +5,8 @@ import {
   type DiscoveredTool,
   type PluginServerConfig,
   type TackServerConfig
-} from "@tack/core";
-import { discoverMcpServers } from "@tack/mcp";
+} from "@cbxss/tack-core";
+import { discoverMcpServers } from "@cbxss/tack-mcp";
 
 import { readPluginLayout } from "./layout.js";
 import { createPluginMount, type PluginMount } from "./mount.js";

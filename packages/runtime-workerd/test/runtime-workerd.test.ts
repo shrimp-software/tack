@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { renderToolsPrelude, type ToolInvoker } from "@tack/codemode";
+import { renderToolsPrelude, type ToolInvoker } from "@cbxss/tack-codemode";
 import { createWorkerdRuntime, isWorkerdAvailable } from "../src/index.js";
 
 const runIfWorkerd = isWorkerdAvailable() ? describe : describe.skip;

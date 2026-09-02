@@ -1,9 +1,9 @@
-import { compileSchema } from "@tack/sdk-types";
+import { compileSchema } from "@cbxss/tack-sdk-types";
 
 import { markdownCodeBlock, markdownInlineCode } from "./markdown.js";
 import { groupMethodsByServer, plannedOperations, toGeneratedMethods } from "./methods.js";
 import type { GeneratedMethod } from "./types.js";
-import type { TackManifest } from "@tack/core";
+import type { TackManifest } from "@cbxss/tack-core";
 
 export async function renderDocs(options: {
   readonly manifest: TackManifest;

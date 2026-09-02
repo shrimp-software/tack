@@ -2,7 +2,7 @@ import { fileURLToPath } from "node:url";
 
 import { describe, expect, it } from "vitest";
 
-import type { TackConfig } from "@tack/core";
+import type { TackConfig } from "@cbxss/tack-core";
 
 import { createRuntime, discoverManifest } from "../src/index.js";
 

@@ -1,6 +1,6 @@
-import type { CodeRuntime } from "@tack/codemode";
-import { createQuickJSRuntime } from "@tack/runtime-quickjs";
-import { createWorkerdRuntime } from "@tack/runtime-workerd";
+import type { CodeRuntime } from "@cbxss/tack-codemode";
+import { createQuickJSRuntime } from "@cbxss/tack-runtime-quickjs";
+import { createWorkerdRuntime } from "@cbxss/tack-runtime-workerd";
 import { afterEach, describe, expect, it } from "vitest";
 import { fakeRuntime, grafanaManifest } from "../../core/test/fixtures.js";
 

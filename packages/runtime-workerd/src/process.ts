@@ -10,7 +10,7 @@ import {
   isAbortError,
   throwIfAborted,
   type ExecutionResult
-} from "@tack/codemode";
+} from "@cbxss/tack-codemode";
 import type { Server } from "node:http";
 
 const packageDir = dirname(dirname(fileURLToPath(import.meta.url)));

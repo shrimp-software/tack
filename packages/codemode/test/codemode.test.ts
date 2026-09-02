@@ -17,7 +17,7 @@ import {
   type CodeRuntime,
   type OperationPolicy
 } from "../src/index.js";
-import { buildManifest, listOperations, type TackManifest } from "@tack/core";
+import { buildManifest, listOperations, type TackManifest } from "@cbxss/tack-core";
 
 describe("codemode operation helpers", () => {
   it("keeps the execute description lean, with the how-to behind findGuide", () => {

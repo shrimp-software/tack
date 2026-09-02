@@ -1,6 +1,6 @@
 {
-  "name": "@tack/service",
-  "version": "0.1.0",
+  "name": "@cbxss/tack-service",
+  "version": "1.0.0",
   "type": "module",
   "exports": {
     ".": {
@@ -17,13 +17,22 @@
     "test": "vitest run --passWithNoTests"
   },
   "dependencies": {
-    "@tack/codemode": "workspace:*",
-    "@tack/core": "workspace:*"
+    "@cbxss/tack-codemode": "1.0.0",
+    "@cbxss/tack-core": "1.0.0"
   },
   "devDependencies": {
-    "@tack/runtime-quickjs": "workspace:*",
-    "@tack/runtime-workerd": "workspace:*",
+    "@cbxss/tack-runtime-quickjs": "1.0.0",
+    "@cbxss/tack-runtime-workerd": "1.0.0",
     "typescript": "^7.0.2",
     "vitest": "^4.1.10"
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/shrimp-software/tack.git"
+  },
+  "homepage": "https://github.com/shrimp-software/tack#readme",
+  "bugs": {
+    "url": "https://github.com/shrimp-software/tack/issues"
   }
 }

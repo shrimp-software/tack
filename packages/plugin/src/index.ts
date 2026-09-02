@@ -27,7 +27,7 @@ export {
   type SkillData
 } from "./skill.js";
 
-// Discovery + runtime — the `Source` behaviour, adapted in `@tack/sources`.
+// Discovery + runtime — the `Source` behaviour, adapted in `@cbxss/tack-sources`.
 export { discoverPluginServers } from "./discover.js";
 export {
   createPluginToolRuntime,

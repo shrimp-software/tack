@@ -11,13 +11,13 @@ export type Transport = TackServerConfig["transport"];
 export type ManifestServerConnection = Omit<TackManifestServer, "id" | "tools">;
 
 /**
- * A kind of tool source as `@tack/core` sees it: the shape of one server config,
+ * A kind of tool source as `@cbxss/tack-core` sees it: the shape of one server config,
  * how that config projects into the manifest, and how relative paths in it are
  * anchored to the config file.
  *
  * The behavioural half — discovery and invocation — is the `Source` interface in
- * `@tack/sources`, which declares the `SourceKind`s it serves. Splitting the two
- * lets the leaf `@tack/core` own config/manifest shape without depending on the
+ * `@cbxss/tack-sources`, which declares the `SourceKind`s it serves. Splitting the two
+ * lets the leaf `@cbxss/tack-core` own config/manifest shape without depending on the
  * source implementations.
  *
  * A first-party kind still adds its config interface + one arm on

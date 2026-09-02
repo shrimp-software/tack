@@ -10,7 +10,7 @@ import {
   typeSegment,
   visitSchemaNodes,
   type JsonSchema
-} from "@tack/core";
+} from "@cbxss/tack-core";
 
 export interface CompileSchemaOptions {
   /**
@@ -22,8 +22,8 @@ export interface CompileSchemaOptions {
 
 /**
  * Compile one JSON Schema into a TypeScript type declaration named `typeName`.
- * The single schema→TS compiler: `@tack/generator` (static SDK types) and
- * `@tack/codemode` (`describe.tool`, the ambient `tools` `.d.ts`) both call
+ * The single schema→TS compiler: `@cbxss/tack-generator` (static SDK types) and
+ * `@cbxss/tack-codemode` (`describe.tool`, the ambient `tools` `.d.ts`) both call
  * this, so their output can never drift.
  */
 export function compileSchema(

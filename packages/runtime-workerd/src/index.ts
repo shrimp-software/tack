@@ -14,7 +14,7 @@ import {
   renderCodeModeUserFunctionSource,
   throwIfAborted,
   validateCodeModeUserCode
-} from "@tack/codemode";
+} from "@cbxss/tack-codemode";
 import { transform } from "esbuild";
 
 import { startHostBridge } from "./host-bridge.js";

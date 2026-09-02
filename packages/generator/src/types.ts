@@ -1,4 +1,4 @@
-import type { JsonSchema } from "@tack/core";
+import type { JsonSchema } from "@cbxss/tack-core";
 
 export interface GeneratedMethod {
   readonly namespaceName: string;

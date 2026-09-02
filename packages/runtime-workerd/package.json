@@ -1,6 +1,6 @@
 {
-  "name": "@tack/runtime-workerd",
-  "version": "0.1.0",
+  "name": "@cbxss/tack-runtime-workerd",
+  "version": "1.0.0",
   "type": "module",
   "exports": {
     ".": {
@@ -17,13 +17,22 @@
     "test": "vitest run --passWithNoTests"
   },
   "dependencies": {
-    "@tack/codemode": "workspace:*",
-    "@tack/core": "workspace:*",
+    "@cbxss/tack-codemode": "1.0.0",
+    "@cbxss/tack-core": "1.0.0",
     "esbuild": "^0.28.1",
     "workerd": "1.20260723.1"
   },
   "devDependencies": {
     "typescript": "^7.0.2",
     "vitest": "^4.1.10"
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/shrimp-software/tack.git"
+  },
+  "homepage": "https://github.com/shrimp-software/tack#readme",
+  "bugs": {
+    "url": "https://github.com/shrimp-software/tack/issues"
   }
 }

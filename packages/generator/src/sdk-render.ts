@@ -3,7 +3,7 @@ import {
   propertyKey,
   typeSegment,
   type TackManifest
-} from "@tack/core";
+} from "@cbxss/tack-core";
 import {
   argSignature,
   buildMethodTree,
@@ -11,7 +11,7 @@ import {
   renderInterfaceTree,
   renderToolsAmbientDts,
   type MethodTree
-} from "@tack/sdk-types";
+} from "@cbxss/tack-sdk-types";
 
 import {
   assertRuntimeManifestServerCoverage,
@@ -65,7 +65,7 @@ async function renderTypes(methods: readonly GeneratedMethod[]): Promise<string>
         ? await compileSchema(method.outputSchema, method.outputType, { context: SDK_TYPES_CONTEXT })
         : `export type ${method.outputType} = unknown;\n`
     );
-    chunks.push(`export type ${method.resultType} = import("@tack/core").TackResult<${method.outputType}>;\n`);
+    chunks.push(`export type ${method.resultType} = import("@cbxss/tack-core").TackResult<${method.outputType}>;\n`);
   }
 
   return `${chunks.join("\n").trim()}\n`;
@@ -94,7 +94,7 @@ function renderIndex(
 
   return [
     GENERATED_FILE_HEADER,
-    'import { DEFAULT_CONFIG_PATH, loadConfigPromise, type TackConfig, type TackManifest, type TackResult, type TackRuntime } from "@tack/core";',
+    'import { DEFAULT_CONFIG_PATH, loadConfigPromise, type TackConfig, type TackManifest, type TackResult, type TackRuntime } from "@cbxss/tack-core";',
     ...imports,
     'export type * from "./types.js";',
     ...exports,
@@ -121,7 +121,7 @@ function renderIndex(
     "",
     "export async function createTackClient(options: CreateTackClientOptions = {}): Promise<TackClient> {",
     "  const config = ownDataValue<TackConfig>(options, \"config\") ?? await loadConfigPromise(ownDataValue<string>(options, \"configPath\") ?? DEFAULT_CONFIG_PATH);",
-    "  const { createRuntime } = await import(\"@tack/sources\");",
+    "  const { createRuntime } = await import(\"@cbxss/tack-sources\");",
     "  const runtime = await createRuntime({ config, manifest });",
     "  return createTackClientFromRuntime(runtime);",
     "}",
@@ -170,7 +170,7 @@ function renderServer(
 
   return [
     GENERATED_FILE_HEADER,
-    'import type { TackResult, TackRuntime } from "@tack/core";',
+    'import type { TackResult, TackRuntime } from "@cbxss/tack-core";',
     renderTypeImport(typeImports),
     "",
     ...renderArgHelpers(methods),

@@ -4,7 +4,7 @@ import {
   ownField,
   type TackManifest,
   type TackRuntime
-} from "@tack/core";
+} from "@cbxss/tack-core";
 
 import { describeTool, normalizeDescribeToolInput } from "./describe.js";
 import { isOperationAllowed, type OperationPolicy } from "./policy.js";

@@ -2,13 +2,13 @@ import { Buffer } from "node:buffer";
 import { Client } from "@modelcontextprotocol/client";
 import { InMemoryTransport } from "@modelcontextprotocol/server";
 import { describe, expect, it } from "vitest";
-import { describeTool, searchOperations } from "@tack/codemode";
-import { createTackResult, type TackRuntime } from "@tack/core";
-import { createQuickJSRuntime } from "@tack/runtime-quickjs";
+import { describeTool, searchOperations } from "@cbxss/tack-codemode";
+import { createTackResult, type TackRuntime } from "@cbxss/tack-core";
+import { createQuickJSRuntime } from "@cbxss/tack-runtime-quickjs";
 import { fakeRuntime, grafanaManifest } from "../../core/test/fixtures.js";
-import type { CodeRuntime } from "@tack/codemode";
+import type { CodeRuntime } from "@cbxss/tack-codemode";
 
-import { createTypeChecker } from "@tack/typecheck";
+import { createTypeChecker } from "@cbxss/tack-typecheck";
 
 import { createTackAgentServer } from "../src/index.js";
 import { extractText } from "./mcp-content.js";
@@ -45,7 +45,7 @@ describe("JavaScript executor", () => {
     const runtime = fakeRuntime(calls);
     const codeRuntime = createQuickJSRuntime({ timeoutMs: 5_000 });
 
-    const { createExecutionEngine } = await import("@tack/codemode");
+    const { createExecutionEngine } = await import("@cbxss/tack-codemode");
     const engine = createExecutionEngine({
       manifest: grafanaManifest(),
       runtime,
@@ -108,7 +108,7 @@ describe("MCP server", () => {
         };
       }
     };
-    const { createExecutionEngine } = await import("@tack/codemode");
+    const { createExecutionEngine } = await import("@cbxss/tack-codemode");
     const directEngine = createExecutionEngine({
       manifest,
       runtime: fakeRuntime(directCalls),

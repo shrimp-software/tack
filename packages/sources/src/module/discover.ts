@@ -1,7 +1,7 @@
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 
-import type { DiscoveredServer, DiscoveredTool } from "@tack/core";
+import type { DiscoveredServer, DiscoveredTool } from "@cbxss/tack-core";
 
 import { isTackTool } from "../define.js";
 

@@ -1,4 +1,4 @@
-import { formatTackError } from "@tack/core";
+import { formatTackError } from "@cbxss/tack-core";
 
 const stripRepeatedErrorPrefix = (input: string): string => {
   let output = input.trim();

@@ -1,6 +1,6 @@
 {
-  "name": "@tack/core",
-  "version": "0.1.0",
+  "name": "@cbxss/tack-core",
+  "version": "1.0.0",
   "type": "module",
   "exports": {
     ".": {
@@ -22,5 +22,14 @@
   "devDependencies": {
     "typescript": "^7.0.2",
     "vitest": "^4.1.10"
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/shrimp-software/tack.git"
+  },
+  "homepage": "https://github.com/shrimp-software/tack#readme",
+  "bugs": {
+    "url": "https://github.com/shrimp-software/tack/issues"
   }
 }

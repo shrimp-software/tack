@@ -7,7 +7,7 @@ import { describe, expect, it } from "vitest";
 
 import { createMcpRuntime, discoverMcpManifestPromise } from "../src/index.js";
 import { StreamableHttpMcpClient } from "../src/http-client.js";
-import type { TackConfig, TackManifest } from "@tack/core";
+import type { TackConfig, TackManifest } from "@cbxss/tack-core";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const fakeServer = join(here, "fixtures", "fake-mcp-server.mjs");

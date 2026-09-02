@@ -3,7 +3,7 @@ import {
   sanitizeData,
   sanitizeRecord,
   type TackServerConfig
-} from "@tack/core";
+} from "@cbxss/tack-core";
 
 import type { McpClient } from "./client.js";
 

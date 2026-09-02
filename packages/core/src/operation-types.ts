@@ -25,7 +25,7 @@ export interface OperationTypeNames {
  * `fullPathString` first.
  *
  * This is the single source of type-name truth: the static SDK
- * (`@tack/generator`) and the code-mode surfaces (`@tack/codemode` —
+ * (`@cbxss/tack-generator`) and the code-mode surfaces (`@cbxss/tack-codemode` —
  * `describe.tool`, the ambient `tools` `.d.ts`) all resolve names through here
  * so they never drift.
  */

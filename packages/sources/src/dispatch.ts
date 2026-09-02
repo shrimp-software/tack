@@ -8,8 +8,8 @@ import {
   type TackRuntime,
   type TackTool,
   type Transport
-} from "@tack/core";
-import { resolvePluginsIntoConfig } from "@tack/plugin";
+} from "@cbxss/tack-core";
+import { resolvePluginsIntoConfig } from "@cbxss/tack-plugin";
 
 import { mcpSource } from "./sources/mcp.js";
 import { moduleSource } from "./sources/module.js";
@@ -34,7 +34,7 @@ function prepareConfig(config: TackConfig, options?: WorkspaceOptions): Promise<
   return resolvePluginsIntoConfig(config, { configDir: options?.configDir ?? process.cwd() });
 }
 
-/** The `@tack/core` source kinds behind {@link SOURCES}, for registry-driven
+/** The `@cbxss/tack-core` source kinds behind {@link SOURCES}, for registry-driven
  *  config parsing and manifest projection. */
 export const SOURCE_KINDS: readonly SourceKind[] = SOURCES.flatMap((source) => source.kinds);
 

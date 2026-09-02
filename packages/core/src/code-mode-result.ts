@@ -1,11 +1,11 @@
 /**
  * The result type every code-mode tool call resolves to. `await tools.x()`
  * inside `execute` returns this shape; it is the discriminated-union narrowing
- * of `@tack/codemode`'s runtime `ToolCallOutput`
+ * of `@cbxss/tack-codemode`'s runtime `ToolCallOutput`
  * (`{ ok; data?; text; raw?; error? }`).
  *
  * Single-sourced here as BOTH a string (emitted verbatim into generated `.ts` /
- * ambient `.d.ts` by `@tack/sdk-types`) and a real type (for internal
+ * ambient `.d.ts` by `@cbxss/tack-sdk-types`) and a real type (for internal
  * assertions), so the two can never disagree.
  *
  * Distinct from `TackResult<T>` in `./types.ts`, which is the method-bearing

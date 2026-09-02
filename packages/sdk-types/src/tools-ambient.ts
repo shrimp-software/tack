@@ -1,4 +1,4 @@
-import { CODE_MODE_RESULT_TS } from "@tack/core";
+import { CODE_MODE_RESULT_TS } from "@cbxss/tack-core";
 
 import { buildMethodTree, renderInterfaceTree, type MethodLike } from "./method-tree.js";
 

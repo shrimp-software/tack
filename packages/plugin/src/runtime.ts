@@ -6,8 +6,8 @@ import {
   type TackResult,
   type TackRuntime,
   type TackTool
-} from "@tack/core";
-import { createMcpToolRuntime } from "@tack/mcp";
+} from "@cbxss/tack-core";
+import { createMcpToolRuntime } from "@cbxss/tack-mcp";
 
 import { readPluginLayout, type PluginSkill } from "./layout.js";
 import { createPluginMount } from "./mount.js";
@@ -24,8 +24,8 @@ type Binding =
 
 /**
  * A {@link TackRuntime} for one plugin's tools. Skills are read from disk as
- * data; bundled MCP tools are delegated to a single `@tack/mcp` runtime that
- * spans every bundled server (`@tack/mcp` opens each connection lazily on first
+ * data; bundled MCP tools are delegated to a single `@cbxss/tack-mcp` runtime that
+ * spans every bundled server (`@cbxss/tack-mcp` opens each connection lazily on first
  * use, so an unused bundled server is never spawned).
  */
 export async function createPluginToolRuntime(

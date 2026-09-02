@@ -5,7 +5,7 @@ import {
   type PluginRef,
   type TackConfig,
   type TackServerConfig
-} from "@tack/core";
+} from "@cbxss/tack-core";
 
 import { ensureCheckout } from "./fetch.js";
 import { readLock, type PluginLock } from "./lock.js";

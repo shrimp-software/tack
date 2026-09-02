@@ -4,7 +4,7 @@ import {
   ownField,
   type TackManifest,
   type TackRuntime
-} from "@tack/core";
+} from "@cbxss/tack-core";
 
 import { createTackToolInvoker } from "./invoker.js";
 import { createExecuteDescription } from "./guide.js";

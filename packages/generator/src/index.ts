@@ -5,7 +5,7 @@ import {
   ownField,
   sanitizeData,
   type TackManifest
-} from "@tack/core";
+} from "@cbxss/tack-core";
 
 import { renderDocs } from "./docs-render.js";
 import { writeSdkFiles } from "./files.js";

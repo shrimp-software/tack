@@ -1,4 +1,4 @@
-import { sanitizeData, type TackOperation } from "@tack/core";
+import { sanitizeData, type TackOperation } from "@cbxss/tack-core";
 
 export interface OperationPolicy {
   readonly allowedOperations?: readonly string[] | undefined;

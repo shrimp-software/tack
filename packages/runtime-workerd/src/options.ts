@@ -1,4 +1,4 @@
-import { ownField } from "@tack/core";
+import { ownField } from "@cbxss/tack-core";
 
 export interface WorkerdRuntimeOptions {
   readonly timeoutMs?: number;

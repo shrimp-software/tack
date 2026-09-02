@@ -5,7 +5,7 @@ import {
   sanitizeData,
   type TackManifest,
   type TackRuntime
-} from "@tack/core";
+} from "@cbxss/tack-core";
 import {
   createExecutionEngine,
   searchOperations,
@@ -13,7 +13,7 @@ import {
   type CreateExecutionEngineOptions,
   type OperationPolicy,
   type ToolAuditEvent
-} from "@tack/codemode";
+} from "@cbxss/tack-codemode";
 
 export interface ServiceRateLimit {
   readonly requests: number;

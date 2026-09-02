@@ -3,7 +3,7 @@ import {
   listOperations,
   type TackManifest,
   type TackOperation
-} from "@tack/core";
+} from "@cbxss/tack-core";
 
 import type { GeneratedMethod } from "./types.js";
 

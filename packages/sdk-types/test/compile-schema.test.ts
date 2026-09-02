@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import type { JsonSchema } from "@tack/core";
+import type { JsonSchema } from "@cbxss/tack-core";
 import { compileSchema } from "../src/index.js";
 
 describe("compileSchema", () => {

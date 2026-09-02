@@ -2,7 +2,7 @@ import { execFile } from "node:child_process";
 import { mkdir, rm, stat } from "node:fs/promises";
 import { join } from "node:path";
 
-import { TackPluginError } from "@tack/core";
+import { TackPluginError } from "@cbxss/tack-core";
 
 import type { ParsedPluginRef } from "./ref.js";
 import { slugForGitRef } from "./ref.js";

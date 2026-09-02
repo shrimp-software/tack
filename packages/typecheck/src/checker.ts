@@ -1,13 +1,13 @@
 import { basename, dirname, join } from "node:path";
 
-import type { TackManifest } from "@tack/core";
+import type { TackManifest } from "@cbxss/tack-core";
 import type {
   OperationPolicy,
   TypeChecker,
   TypeCheckContext,
   TypeCheckOutcome,
   TypeDiagnostic
-} from "@tack/codemode";
+} from "@cbxss/tack-codemode";
 import ts from "typescript-5";
 
 import { buildAmbientDts } from "./ambient.js";

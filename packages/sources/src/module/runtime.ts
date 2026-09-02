@@ -5,7 +5,7 @@ import {
   type TackResult,
   type TackRuntime,
   type TackTool
-} from "@tack/core";
+} from "@cbxss/tack-core";
 
 import { isTackTool, type TackToolDefinition } from "../define.js";
 import { importModule } from "./discover.js";

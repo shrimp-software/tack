@@ -7,7 +7,7 @@ import {
   listenTackMcpHttp,
   serveTackMcpStdio,
   type DelegateOptions
-} from "@tack/agent";
+} from "@cbxss/tack-agent";
 import {
   createExecutionEngine,
   formatTraceLine,
@@ -17,8 +17,8 @@ import {
   type ExecutionResult,
   type OperationPolicy,
   type ToolAuditEvent
-} from "@tack/codemode";
-import { createTypeChecker } from "@tack/typecheck";
+} from "@cbxss/tack-codemode";
+import { createTypeChecker } from "@cbxss/tack-typecheck";
 import {
   DEFAULT_CONFIG_PATH,
   DEFAULT_OUTPUT_DIR,
@@ -32,8 +32,8 @@ import {
   type TackManifest,
   type TackOperation,
   writeJsonPromise
-} from "@tack/core";
-import { generateDocsPromise, generateSdkPromise } from "@tack/generator";
+} from "@cbxss/tack-core";
+import { generateDocsPromise, generateSdkPromise } from "@cbxss/tack-generator";
 import {
   ensureCheckout,
   parsePluginRef,
@@ -45,11 +45,11 @@ import {
   withoutLockEntry,
   writeLock,
   type ParsedPluginRef
-} from "@tack/plugin";
-import { createRuntime, discoverManifest } from "@tack/sources";
-import { createQuickJSRuntime } from "@tack/runtime-quickjs";
-import { createWorkerdRuntime } from "@tack/runtime-workerd";
-import { listenTackHttpService } from "@tack/service";
+} from "@cbxss/tack-plugin";
+import { createRuntime, discoverManifest } from "@cbxss/tack-sources";
+import { createQuickJSRuntime } from "@cbxss/tack-runtime-quickjs";
+import { createWorkerdRuntime } from "@cbxss/tack-runtime-workerd";
+import { listenTackHttpService } from "@cbxss/tack-service";
 import { formatCliError } from "./cli-output.js";
 import { runDoctor } from "./doctor.js";
 import {

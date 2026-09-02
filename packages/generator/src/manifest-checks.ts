@@ -1,7 +1,7 @@
 import {
   objectRecord,
   type TackManifest
-} from "@tack/core";
+} from "@cbxss/tack-core";
 
 import type { GeneratedMethod } from "./types.js";
 

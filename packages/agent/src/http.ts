@@ -8,8 +8,8 @@ import {
   sanitizeData,
   type TackManifest,
   type TackRuntime
-} from "@tack/core";
-import type { CodeRuntime, OperationPolicy, ToolAuditEvent } from "@tack/codemode";
+} from "@cbxss/tack-core";
+import type { CodeRuntime, OperationPolicy, ToolAuditEvent } from "@cbxss/tack-codemode";
 
 import { createTackAgentServer, type CreateTackAgentServerOptions } from "./server.js";
 

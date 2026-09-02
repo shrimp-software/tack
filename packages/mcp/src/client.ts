@@ -7,7 +7,7 @@ import {
   type HttpServerConfig,
   type StdioServerConfig,
   type TackConfig
-} from "@tack/core";
+} from "@cbxss/tack-core";
 
 import { StreamableHttpMcpClient } from "./http-client.js";
 

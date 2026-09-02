@@ -4,18 +4,18 @@ import {
   listOperations,
   type TackManifest,
   type TackOperation
-} from "@tack/core";
+} from "@cbxss/tack-core";
 import {
   filterAllowedOperations,
   operationTypeScript,
   type OperationPolicy
-} from "@tack/codemode";
+} from "@cbxss/tack-codemode";
 import {
   DESCRIBED_TOOL_TS,
   renderAmbientToolsBlock,
   SEARCH_RESULT_TS,
   type MethodLike
-} from "@tack/sdk-types";
+} from "@cbxss/tack-sdk-types";
 
 /**
  * Globals the code-mode sandbox shadows to `undefined` (or a throwing stub).

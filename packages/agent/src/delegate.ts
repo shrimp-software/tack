@@ -1,5 +1,5 @@
-import { renderExecuteGuide, type ExecutionResult, type OperationPolicy } from "@tack/codemode";
-import type { TackManifest } from "@tack/core";
+import { renderExecuteGuide, type ExecutionResult, type OperationPolicy } from "@cbxss/tack-codemode";
+import type { TackManifest } from "@cbxss/tack-core";
 
 /**
  * `delegate` is code-mode with the code generation moved server-side: an LLM

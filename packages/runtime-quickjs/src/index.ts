@@ -16,8 +16,8 @@ import {
   throwIfAborted,
   validateCodeModeUserCode,
   withTimeout
-} from "@tack/codemode";
-import { ownField } from "@tack/core";
+} from "@cbxss/tack-codemode";
+import { ownField } from "@cbxss/tack-core";
 import { transform } from "esbuild";
 import {
   newAsyncContext,

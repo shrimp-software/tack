@@ -1,4 +1,4 @@
-import { toIdentifier, TackPluginError } from "@tack/core";
+import { toIdentifier, TackPluginError } from "@cbxss/tack-core";
 
 import type { PluginBundledMcpServer, PluginSkill } from "./layout.js";
 

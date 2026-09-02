@@ -1,7 +1,7 @@
 import { readdir, readFile, realpath, stat } from "node:fs/promises";
 import { join, relative, sep } from "node:path";
 
-import { TackPluginError, type JsonSchema } from "@tack/core";
+import { TackPluginError, type JsonSchema } from "@cbxss/tack-core";
 
 import type { PluginSkill } from "./layout.js";
 

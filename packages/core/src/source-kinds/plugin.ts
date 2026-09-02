@@ -11,7 +11,7 @@ const PluginServerConfigSchema = z.object({
 
 /**
  * A plugin bundle mounted as one namespace. This kind only ever sees the
- * desugared form — a local `path` — because `@tack/plugin` resolves the
+ * desugared form — a local `path` — because `@cbxss/tack-plugin` resolves the
  * top-level `plugins` block (git fetch / anchoring) into `plugin` sources before
  * config parsing.
  */

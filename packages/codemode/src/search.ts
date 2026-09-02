@@ -5,7 +5,7 @@ import {
   type JsonSchema,
   type TackManifest,
   type TackOperation
-} from "@tack/core";
+} from "@cbxss/tack-core";
 
 import { operationTypeScript } from "./operation-typescript.js";
 import { filterAllowedOperations, type OperationPolicy } from "./policy.js";

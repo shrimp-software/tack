@@ -3,7 +3,7 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
 
-import { buildManifest, type TackConfig, type TackRuntime } from "@tack/core";
+import { buildManifest, type TackConfig, type TackRuntime } from "@cbxss/tack-core";
 
 import { createRuntime, defineTool, discoverManifest, isTackTool } from "../src/index.js";
 import { discoverModuleSource } from "../src/module/discover.js";

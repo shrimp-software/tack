@@ -6,7 +6,7 @@ import type {
   TackServerConfig,
   TackTool,
   Transport
-} from "@tack/core";
+} from "@cbxss/tack-core";
 
 /**
  * A kind of tool source. Register one in `dispatch.ts`'s `SOURCES` list and the
@@ -14,15 +14,15 @@ import type {
  *
  * A `Source` is the behavioural half (discover + run); it declares the
  * {@link SourceKind}s it serves (config shape + manifest projection, owned by
- * `@tack/core`). The dispatcher hands each method only the slice this source owns
+ * `@cbxss/tack-core`). The dispatcher hands each method only the slice this source owns
  * (entries / tools filtered by those kinds' transports), so implementations
  * never filter.
  *
  * Dependency-free kinds live in `src/sources/`; kinds with a real client or
- * protocol get their own `@tack/*` package (see `@tack/mcp`) and a thin adapter here.
+ * protocol get their own `@tack/*` package (see `@cbxss/tack-mcp`) and a thin adapter here.
  */
 export interface Source {
-  /** The `@tack/core` source kinds this source serves. */
+  /** The `@cbxss/tack-core` source kinds this source serves. */
   readonly kinds: readonly SourceKind[];
 
   /** Discover tools for this source's server configs. */

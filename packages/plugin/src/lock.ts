@@ -1,6 +1,6 @@
 import { readFile, writeFile } from "node:fs/promises";
 
-import { TackPluginError } from "@tack/core";
+import { TackPluginError } from "@cbxss/tack-core";
 
 export interface PluginLockEntry {
   readonly source: string;

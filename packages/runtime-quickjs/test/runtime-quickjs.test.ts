@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { renderToolsPrelude, type ToolInvoker } from "@tack/codemode";
+import { renderToolsPrelude, type ToolInvoker } from "@cbxss/tack-codemode";
 import { createQuickJSRuntime } from "../src/index.js";
 
 describe("quickjs runtime setup", () => {

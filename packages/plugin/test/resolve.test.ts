@@ -6,7 +6,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import type { TackConfig } from "@tack/core";
+import type { TackConfig } from "@cbxss/tack-core";
 
 import { writeLock } from "../src/lock.js";
 import { resolvePluginsIntoConfig } from "../src/resolve.js";

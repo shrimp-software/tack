@@ -1,4 +1,4 @@
-import { moduleSourceKind, type DiscoveredServer } from "@tack/core";
+import { moduleSourceKind, type DiscoveredServer } from "@cbxss/tack-core";
 
 import { discoverModuleSource } from "../module/discover.js";
 import { createModuleRuntime } from "../module/runtime.js";

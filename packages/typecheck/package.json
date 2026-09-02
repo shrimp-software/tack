@@ -1,6 +1,6 @@
 {
-  "name": "@tack/typecheck",
-  "version": "0.1.0",
+  "name": "@cbxss/tack-typecheck",
+  "version": "1.0.0",
   "type": "module",
   "exports": {
     ".": {
@@ -17,13 +17,22 @@
     "test": "vitest run --passWithNoTests"
   },
   "dependencies": {
-    "@tack/codemode": "workspace:*",
-    "@tack/core": "workspace:*",
-    "@tack/sdk-types": "workspace:*",
+    "@cbxss/tack-codemode": "1.0.0",
+    "@cbxss/tack-core": "1.0.0",
+    "@cbxss/tack-sdk-types": "1.0.0",
     "typescript-5": "npm:typescript@^5.9.0"
   },
   "devDependencies": {
     "typescript": "^7.0.2",
     "vitest": "^4.1.10"
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/shrimp-software/tack.git"
+  },
+  "homepage": "https://github.com/shrimp-software/tack#readme",
+  "bugs": {
+    "url": "https://github.com/shrimp-software/tack/issues"
   }
 }

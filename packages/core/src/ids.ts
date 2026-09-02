@@ -29,7 +29,7 @@ export function toIdentifier(value: string, fallback = "item"): string {
  * Splits on case boundaries, digits, and non-alphanumerics; guards a leading
  * non-identifier character with `_` so the result is always a valid TS name
  * (e.g. `"2fa"` → `"_2Fa"`, `""` → `"_Item"`). Shared by the static SDK
- * (`@tack/generator`) and code-mode type surfaces (`@tack/codemode`).
+ * (`@cbxss/tack-generator`) and code-mode type surfaces (`@cbxss/tack-codemode`).
  */
 export function typeSegment(identifier: string): string {
   const value = typeSegmentWords(identifier).map(capitalizeWord).join("");

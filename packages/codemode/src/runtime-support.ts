@@ -1,4 +1,4 @@
-import { ownField } from "@tack/core";
+import { ownField } from "@cbxss/tack-core";
 import type { ExecutionResult, ToolInvoker } from "./types.js";
 
 export interface NormalizedCodeRuntimeExecuteInput {

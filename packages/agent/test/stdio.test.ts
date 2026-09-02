@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { createQuickJSRuntime } from "@tack/runtime-quickjs";
+import { createQuickJSRuntime } from "@cbxss/tack-runtime-quickjs";
 import { fakeRuntime, grafanaManifest } from "../../core/test/fixtures.js";
 
 const stdioMock = vi.hoisted(() => {

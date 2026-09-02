@@ -10,7 +10,7 @@ import {
   ownField,
   type TackManifest,
   type TackRuntime
-} from "@tack/core";
+} from "@cbxss/tack-core";
 import {
   availableNamespaces,
   createExecutionEngine,
@@ -26,8 +26,8 @@ import {
   type ExecutionSession,
   type OperationPolicy,
   type TraceSink
-} from "@tack/codemode";
-import type { ToolAuditEvent } from "@tack/codemode";
+} from "@cbxss/tack-codemode";
+import type { ToolAuditEvent } from "@cbxss/tack-codemode";
 import { buildDelegateSystemPrompt, runDelegate, type DelegateOptions } from "./delegate.js";
 
 export interface CreateTackAgentServerOptions {

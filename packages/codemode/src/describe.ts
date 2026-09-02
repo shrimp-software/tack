@@ -4,7 +4,7 @@ import {
   ownField,
   type JsonSchema,
   type TackManifest
-} from "@tack/core";
+} from "@cbxss/tack-core";
 
 import { operationTypeScript } from "./operation-typescript.js";
 import { isOperationAllowed, type OperationPolicy } from "./policy.js";

@@ -10,7 +10,7 @@ export { pluginSourceKind } from "./plugin.js";
 export { stdioSourceKind } from "./stdio.js";
 
 /**
- * The source kinds `@tack/core` ships. `parseConfig`, `buildManifest`, and
+ * The source kinds `@cbxss/tack-core` ships. `parseConfig`, `buildManifest`, and
  * `loadConfig` fall back to this list; a consumer that adds a kind threads
  * `[...BUILTIN_SOURCE_KINDS, myKind]` through those calls instead.
  */

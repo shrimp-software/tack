@@ -1,7 +1,7 @@
 /**
  * Example module source: serve a directory of markdown files as two tools.
  *
- * In your own project this import is `from "@tack/sources"`; it is relative here
+ * In your own project this import is `from "@cbxss/tack-sources"`; it is relative here
  * only because the file lives inside the package.
  *
  * Point a config entry at it:

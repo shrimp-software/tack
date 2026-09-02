@@ -1,6 +1,6 @@
 import { Client, StreamableHTTPClientTransport } from "@modelcontextprotocol/client";
 import { afterEach, describe, expect, it } from "vitest";
-import { createQuickJSRuntime } from "@tack/runtime-quickjs";
+import { createQuickJSRuntime } from "@cbxss/tack-runtime-quickjs";
 import { fakeRuntime, grafanaManifest } from "../../core/test/fixtures.js";
 
 import { listenTackMcpHttp, type TackMcpHttpHandle } from "../src/http.js";

@@ -1,5 +1,5 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
-import type { ToolInvoker } from "@tack/codemode";
+import type { ToolInvoker } from "@cbxss/tack-codemode";
 
 import { closeServer } from "./process.js";
 

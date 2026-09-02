@@ -4,10 +4,10 @@ import { Client } from "@modelcontextprotocol/client";
 import { InMemoryTransport } from "@modelcontextprotocol/server";
 import { describe, expect, it } from "vitest";
 
-import type { TackConfig } from "@tack/core";
-import { createQuickJSRuntime } from "@tack/runtime-quickjs";
-import { createRuntime, discoverManifest } from "@tack/sources";
-import { createTypeChecker } from "@tack/typecheck";
+import type { TackConfig } from "@cbxss/tack-core";
+import { createQuickJSRuntime } from "@cbxss/tack-runtime-quickjs";
+import { createRuntime, discoverManifest } from "@cbxss/tack-sources";
+import { createTypeChecker } from "@cbxss/tack-typecheck";
 
 import { createTackAgentServer } from "../src/index.js";
 

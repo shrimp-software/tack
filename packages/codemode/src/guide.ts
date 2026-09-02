@@ -1,4 +1,4 @@
-import { listOperations, type TackManifest } from "@tack/core";
+import { listOperations, type TackManifest } from "@cbxss/tack-core";
 
 import { filterAllowedOperations, type OperationPolicy } from "./policy.js";
 

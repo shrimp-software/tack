@@ -13,40 +13,40 @@
       },
     },
     "packages/agent": {
-      "name": "@tack/agent",
-      "version": "0.1.0",
+      "name": "@cbxss/tack-agent",
+      "version": "1.0.0",
       "dependencies": {
+        "@cbxss/tack-codemode": "1.0.0",
+        "@cbxss/tack-core": "1.0.0",
         "@modelcontextprotocol/server": "2.0.0-beta.5",
-        "@tack/codemode": "workspace:*",
-        "@tack/core": "workspace:*",
         "zod": "^4.4.3",
       },
       "devDependencies": {
+        "@cbxss/tack-runtime-quickjs": "1.0.0",
+        "@cbxss/tack-sources": "1.0.0",
+        "@cbxss/tack-typecheck": "1.0.0",
         "@modelcontextprotocol/client": "2.0.0-beta.5",
-        "@tack/runtime-quickjs": "workspace:*",
-        "@tack/sources": "workspace:*",
-        "@tack/typecheck": "workspace:*",
         "typescript": "^7.0.2",
         "vitest": "^4.1.10",
       },
     },
     "packages/cli": {
-      "name": "@tack/cli",
-      "version": "0.1.0",
+      "name": "@cbxss/tack",
+      "version": "1.0.0",
       "bin": {
         "tack": "./dist/index.js",
       },
       "dependencies": {
-        "@tack/agent": "workspace:*",
-        "@tack/codemode": "workspace:*",
-        "@tack/core": "workspace:*",
-        "@tack/generator": "workspace:*",
-        "@tack/plugin": "workspace:*",
-        "@tack/runtime-quickjs": "workspace:*",
-        "@tack/runtime-workerd": "workspace:*",
-        "@tack/service": "workspace:*",
-        "@tack/sources": "workspace:*",
-        "@tack/typecheck": "workspace:*",
+        "@cbxss/tack-agent": "1.0.0",
+        "@cbxss/tack-codemode": "1.0.0",
+        "@cbxss/tack-core": "1.0.0",
+        "@cbxss/tack-generator": "1.0.0",
+        "@cbxss/tack-plugin": "1.0.0",
+        "@cbxss/tack-runtime-quickjs": "1.0.0",
+        "@cbxss/tack-runtime-workerd": "1.0.0",
+        "@cbxss/tack-service": "1.0.0",
+        "@cbxss/tack-sources": "1.0.0",
+        "@cbxss/tack-typecheck": "1.0.0",
         "commander": "^15.0.0",
       },
       "devDependencies": {
@@ -57,11 +57,11 @@
       },
     },
     "packages/codemode": {
-      "name": "@tack/codemode",
-      "version": "0.1.0",
+      "name": "@cbxss/tack-codemode",
+      "version": "1.0.0",
       "dependencies": {
-        "@tack/core": "workspace:*",
-        "@tack/sdk-types": "workspace:*",
+        "@cbxss/tack-core": "1.0.0",
+        "@cbxss/tack-sdk-types": "1.0.0",
       },
       "devDependencies": {
         "typescript": "^7.0.2",
@@ -69,8 +69,8 @@
       },
     },
     "packages/core": {
-      "name": "@tack/core",
-      "version": "0.1.0",
+      "name": "@cbxss/tack-core",
+      "version": "1.0.0",
       "dependencies": {
         "zod": "^4.4.3",
       },
@@ -80,11 +80,11 @@
       },
     },
     "packages/generator": {
-      "name": "@tack/generator",
-      "version": "0.1.0",
+      "name": "@cbxss/tack-generator",
+      "version": "1.0.0",
       "dependencies": {
-        "@tack/core": "workspace:*",
-        "@tack/sdk-types": "workspace:*",
+        "@cbxss/tack-core": "1.0.0",
+        "@cbxss/tack-sdk-types": "1.0.0",
       },
       "devDependencies": {
         "typescript": "^7.0.2",
@@ -92,11 +92,11 @@
       },
     },
     "packages/mcp": {
-      "name": "@tack/mcp",
-      "version": "0.1.0",
+      "name": "@cbxss/tack-mcp",
+      "version": "1.0.0",
       "dependencies": {
+        "@cbxss/tack-core": "1.0.0",
         "@modelcontextprotocol/client": "2.0.0-beta.5",
-        "@tack/core": "workspace:*",
       },
       "devDependencies": {
         "@modelcontextprotocol/server": "2.0.0-beta.5",
@@ -105,11 +105,11 @@
       },
     },
     "packages/plugin": {
-      "name": "@tack/plugin",
-      "version": "0.1.0",
+      "name": "@cbxss/tack-plugin",
+      "version": "1.0.0",
       "dependencies": {
-        "@tack/core": "workspace:*",
-        "@tack/mcp": "workspace:*",
+        "@cbxss/tack-core": "1.0.0",
+        "@cbxss/tack-mcp": "1.0.0",
         "zod": "^4.4.3",
       },
       "devDependencies": {
@@ -118,11 +118,11 @@
       },
     },
     "packages/runtime-quickjs": {
-      "name": "@tack/runtime-quickjs",
-      "version": "0.1.0",
+      "name": "@cbxss/tack-runtime-quickjs",
+      "version": "1.0.0",
       "dependencies": {
-        "@tack/codemode": "workspace:*",
-        "@tack/core": "workspace:*",
+        "@cbxss/tack-codemode": "1.0.0",
+        "@cbxss/tack-core": "1.0.0",
         "acorn": "^8.14.0",
         "esbuild": "^0.28.1",
         "quickjs-emscripten": "0.32.0",
@@ -134,11 +134,11 @@
       },
     },
     "packages/runtime-workerd": {
-      "name": "@tack/runtime-workerd",
-      "version": "0.1.0",
+      "name": "@cbxss/tack-runtime-workerd",
+      "version": "1.0.0",
       "dependencies": {
-        "@tack/codemode": "workspace:*",
-        "@tack/core": "workspace:*",
+        "@cbxss/tack-codemode": "1.0.0",
+        "@cbxss/tack-core": "1.0.0",
         "esbuild": "^0.28.1",
         "workerd": "1.20260723.1",
       },
@@ -148,10 +148,10 @@
       },
     },
     "packages/sdk-types": {
-      "name": "@tack/sdk-types",
-      "version": "0.1.0",
+      "name": "@cbxss/tack-sdk-types",
+      "version": "1.0.0",
       "dependencies": {
-        "@tack/core": "workspace:*",
+        "@cbxss/tack-core": "1.0.0",
         "json-schema-to-typescript": "^15.0.4",
       },
       "devDependencies": {
@@ -160,26 +160,26 @@
       },
     },
     "packages/service": {
-      "name": "@tack/service",
-      "version": "0.1.0",
+      "name": "@cbxss/tack-service",
+      "version": "1.0.0",
       "dependencies": {
-        "@tack/codemode": "workspace:*",
-        "@tack/core": "workspace:*",
+        "@cbxss/tack-codemode": "1.0.0",
+        "@cbxss/tack-core": "1.0.0",
       },
       "devDependencies": {
-        "@tack/runtime-quickjs": "workspace:*",
-        "@tack/runtime-workerd": "workspace:*",
+        "@cbxss/tack-runtime-quickjs": "1.0.0",
+        "@cbxss/tack-runtime-workerd": "1.0.0",
         "typescript": "^7.0.2",
         "vitest": "^4.1.10",
       },
     },
     "packages/sources": {
-      "name": "@tack/sources",
-      "version": "0.1.0",
+      "name": "@cbxss/tack-sources",
+      "version": "1.0.0",
       "dependencies": {
-        "@tack/core": "workspace:*",
-        "@tack/mcp": "workspace:*",
-        "@tack/plugin": "workspace:*",
+        "@cbxss/tack-core": "1.0.0",
+        "@cbxss/tack-mcp": "1.0.0",
+        "@cbxss/tack-plugin": "1.0.0",
         "zod": "^4.4.3",
       },
       "devDependencies": {
@@ -188,12 +188,12 @@
       },
     },
     "packages/typecheck": {
-      "name": "@tack/typecheck",
-      "version": "0.1.0",
+      "name": "@cbxss/tack-typecheck",
+      "version": "1.0.0",
       "dependencies": {
-        "@tack/codemode": "workspace:*",
-        "@tack/core": "workspace:*",
-        "@tack/sdk-types": "workspace:*",
+        "@cbxss/tack-codemode": "1.0.0",
+        "@cbxss/tack-core": "1.0.0",
+        "@cbxss/tack-sdk-types": "1.0.0",
         "typescript-5": "npm:typescript@^5.9.0",
       },
       "devDependencies": {
@@ -204,6 +204,32 @@
   },
   "packages": {
     "@apidevtools/json-schema-ref-parser": ["@apidevtools/json-schema-ref-parser@11.9.3", "", { "dependencies": { "@jsdevtools/ono": "^7.1.3", "@types/json-schema": "^7.0.15", "js-yaml": "^4.1.0" } }, "sha512-60vepv88RwcJtSHrD6MjIL6Ta3SOYbgfnkHb+ppAVK+o9mXprRtulx7VlRl3lN3bbvysAfCS7WMVfhUYemB0IQ=="],
+
+    "@cbxss/tack": ["@cbxss/tack@workspace:packages/cli"],
+
+    "@cbxss/tack-agent": ["@cbxss/tack-agent@workspace:packages/agent"],
+
+    "@cbxss/tack-codemode": ["@cbxss/tack-codemode@workspace:packages/codemode"],
+
+    "@cbxss/tack-core": ["@cbxss/tack-core@workspace:packages/core"],
+
+    "@cbxss/tack-generator": ["@cbxss/tack-generator@workspace:packages/generator"],
+
+    "@cbxss/tack-mcp": ["@cbxss/tack-mcp@workspace:packages/mcp"],
+
+    "@cbxss/tack-plugin": ["@cbxss/tack-plugin@workspace:packages/plugin"],
+
+    "@cbxss/tack-runtime-quickjs": ["@cbxss/tack-runtime-quickjs@workspace:packages/runtime-quickjs"],
+
+    "@cbxss/tack-runtime-workerd": ["@cbxss/tack-runtime-workerd@workspace:packages/runtime-workerd"],
+
+    "@cbxss/tack-sdk-types": ["@cbxss/tack-sdk-types@workspace:packages/sdk-types"],
+
+    "@cbxss/tack-service": ["@cbxss/tack-service@workspace:packages/service"],
+
+    "@cbxss/tack-sources": ["@cbxss/tack-sources@workspace:packages/sources"],
+
+    "@cbxss/tack-typecheck": ["@cbxss/tack-typecheck@workspace:packages/typecheck"],
 
     "@cloudflare/workerd-darwin-64": ["@cloudflare/workerd-darwin-64@1.20260723.1", "", { "os": "darwin", "cpu": "x64" }, "sha512-/4ZRRqcZEmgE5n6qPeDYSml7UEss0bWvfKxV4lpp9sVC91x/2Lig7+3mRrm1AjmFN0XlC4axtHX5KWn+z2SEQw=="],
 
@@ -334,32 +360,6 @@
     "@sindresorhus/merge-streams": ["@sindresorhus/merge-streams@4.0.0", "", {}, "sha512-tlqY9xq5ukxTUZBmoOp+m61cqwQD5pHJtFY3Mn8CA8ps6yghLH/Hw8UPdqg4OLmFW3IFlcXnQNmo/dh8HzXYIQ=="],
 
     "@standard-schema/spec": ["@standard-schema/spec@1.1.0", "", {}, "sha512-l2aFy5jALhniG5HgqrD6jXLi/rUWrKvqN/qJx6yoJsgKhblVd+iqqU4RCXavm/jPityDo5TCvKMnpjKnOriy0w=="],
-
-    "@tack/agent": ["@tack/agent@workspace:packages/agent"],
-
-    "@tack/cli": ["@tack/cli@workspace:packages/cli"],
-
-    "@tack/codemode": ["@tack/codemode@workspace:packages/codemode"],
-
-    "@tack/core": ["@tack/core@workspace:packages/core"],
-
-    "@tack/generator": ["@tack/generator@workspace:packages/generator"],
-
-    "@tack/mcp": ["@tack/mcp@workspace:packages/mcp"],
-
-    "@tack/plugin": ["@tack/plugin@workspace:packages/plugin"],
-
-    "@tack/runtime-quickjs": ["@tack/runtime-quickjs@workspace:packages/runtime-quickjs"],
-
-    "@tack/runtime-workerd": ["@tack/runtime-workerd@workspace:packages/runtime-workerd"],
-
-    "@tack/sdk-types": ["@tack/sdk-types@workspace:packages/sdk-types"],
-
-    "@tack/service": ["@tack/service@workspace:packages/service"],
-
-    "@tack/sources": ["@tack/sources@workspace:packages/sources"],
-
-    "@tack/typecheck": ["@tack/typecheck@workspace:packages/typecheck"],
 
     "@turbo/darwin-64": ["@turbo/darwin-64@2.10.6", "", { "os": "darwin", "cpu": "x64" }, "sha512-S+yIyZkmjYBQbIM7sTqMAwnLeMjSK60Q9grUDPbTWvkRjbsn5k1Rt5sPvTX80M4PnlYQBwLiYsjlu6tHsuIqQQ=="],
 

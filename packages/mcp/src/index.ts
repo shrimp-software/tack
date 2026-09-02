@@ -16,7 +16,7 @@ import {
   type TackServerConfig,
   type TackTool,
   type Transport
-} from "@tack/core";
+} from "@cbxss/tack-core";
 
 import {
   closeConnections,

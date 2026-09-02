@@ -1,5 +1,5 @@
-import { operationTypeBase, type TackOperation } from "@tack/core";
-import { compileSchema } from "@tack/sdk-types";
+import { operationTypeBase, type TackOperation } from "@cbxss/tack-core";
+import { compileSchema } from "@cbxss/tack-sdk-types";
 
 /** Label threaded into `assertLocalSchemaRefs` errors from code-mode type compilation. */
 const CONTEXT = { context: "described tool types" };

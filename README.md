@@ -8,19 +8,19 @@ The SDK target is TypeScript only. Code mode runs on QuickJS by default, with wo
 
 | Package | Purpose |
 | --- | --- |
-| `@tack/core` | Config, manifests, operation planning, shared safe-data helpers |
-| `@tack/mcp` | MCP discovery and invocation |
-| `@tack/sources` | Source dispatch (MCP, module, and plugin sources), `defineTool` authoring API |
-| `@tack/plugin` | Plugin-bundle discovery, git fetching, lockfiles, skills, and bundled MCP servers |
-| `@tack/generator` | TypeScript SDK and docs generation |
-| `@tack/sdk-types` | Schema compilation and typed SDK declaration generation |
-| `@tack/typecheck` | Type checking for code-mode programs |
-| `@tack/codemode` | Search, describe, execution engine, runtime helpers |
-| `@tack/runtime-quickjs` | Default isolated runtime |
-| `@tack/runtime-workerd` | Optional process-isolated runtime |
-| `@tack/agent` | Agent-facing MCP server |
-| `@tack/service` | Authenticated HTTP service |
-| `@tack/cli` | CLI entrypoint |
+| `@cbxss/tack-core` | Config, manifests, operation planning, shared safe-data helpers |
+| `@cbxss/tack-mcp` | MCP discovery and invocation |
+| `@cbxss/tack-sources` | Source dispatch (MCP, module, and plugin sources), `defineTool` authoring API |
+| `@cbxss/tack-plugin` | Plugin-bundle discovery, git fetching, lockfiles, skills, and bundled MCP servers |
+| `@cbxss/tack-generator` | TypeScript SDK and docs generation |
+| `@cbxss/tack-sdk-types` | Schema compilation and typed SDK declaration generation |
+| `@cbxss/tack-typecheck` | Type checking for code-mode programs |
+| `@cbxss/tack-codemode` | Search, describe, execution engine, runtime helpers |
+| `@cbxss/tack-runtime-quickjs` | Default isolated runtime |
+| `@cbxss/tack-runtime-workerd` | Optional process-isolated runtime |
+| `@cbxss/tack-agent` | Agent-facing MCP server |
+| `@cbxss/tack-service` | Authenticated HTTP service |
+| `@cbxss/tack` | CLI entrypoint |
 
 ## Development
 
@@ -38,6 +38,13 @@ bun run --cwd packages/cli dev -- --help
 ```
 
 ## Usage
+
+Install the CLI globally, or run it without installing:
+
+```sh
+npm install -g @cbxss/tack
+npx -y @cbxss/tack --help
+```
 
 ```sh
 bun run --cwd packages/cli dev -- init
@@ -111,7 +118,7 @@ A module source exports one `defineTool()` per tool. Each has a `name` (its stab
 
 ```ts
 import { z } from "zod";
-import { defineTool } from "@tack/sources";
+import { defineTool } from "@cbxss/tack-sources";
 
 export const searchDocs = defineTool({
   name: "search_docs",

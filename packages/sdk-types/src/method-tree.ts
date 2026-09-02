@@ -1,9 +1,9 @@
-import { hasRequiredInput, propertyKey, type JsonSchema } from "@tack/core";
+import { hasRequiredInput, propertyKey, type JsonSchema } from "@cbxss/tack-core";
 
 /**
  * The minimum an operation must provide to be rendered into a method tree.
- * `@tack/generator`'s `GeneratedMethod` satisfies this structurally, as does
- * the adapter `@tack/codemode` builds for the ambient `tools` surface.
+ * `@cbxss/tack-generator`'s `GeneratedMethod` satisfies this structurally, as does
+ * the adapter `@cbxss/tack-codemode` builds for the ambient `tools` surface.
  */
 export interface MethodLike {
   readonly namespaceName: string;

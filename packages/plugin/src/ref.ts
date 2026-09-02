@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 
-import { TackPluginError, type PluginRef } from "@tack/core";
+import { TackPluginError, type PluginRef } from "@cbxss/tack-core";
 
 /** A plugin reference resolved to how it is obtained. */
 export type ParsedPluginRef =

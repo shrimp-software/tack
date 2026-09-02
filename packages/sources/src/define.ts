@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-import type { JsonSchema } from "@tack/core";
+import type { JsonSchema } from "@cbxss/tack-core";
 
 /**
  * Non-enumerable runtime brand stamped on every {@link defineTool} result.

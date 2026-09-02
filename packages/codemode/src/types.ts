@@ -70,8 +70,8 @@ export interface TypeCheckOutcome {
 }
 
 /**
- * Pre-run typechecker for code-mode cells. Implemented by `@tack/typecheck` and
- * injected into `createExecutionEngine`; `@tack/codemode` never imports it.
+ * Pre-run typechecker for code-mode cells. Implemented by `@cbxss/tack-typecheck` and
+ * injected into `createExecutionEngine`; `@cbxss/tack-codemode` never imports it.
  */
 export interface TypeChecker {
   check(code: string, context?: TypeCheckContext): Promise<TypeCheckOutcome>;

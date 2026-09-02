@@ -1,8 +1,8 @@
 import { stat } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
-import { DEFAULT_CONFIG_PATH, loadConfigPromise, type TackConfig } from "@tack/core";
-import { readLock } from "@tack/plugin";
-import { discoverManifest } from "@tack/sources";
+import { DEFAULT_CONFIG_PATH, loadConfigPromise, type TackConfig } from "@cbxss/tack-core";
+import { readLock } from "@cbxss/tack-plugin";
+import { discoverManifest } from "@cbxss/tack-sources";
 import { formatCliError } from "./cli-output.js";
 
 export interface DoctorOptions {
