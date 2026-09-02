@@ -71,6 +71,43 @@ describe("MCP adapter", () => {
     }
   });
 
+  it("falls back to a session for legacy Streamable HTTP MCP servers", async () => {
+    const server = await startLegacyHttpMcpServer();
+    const config: TackConfig = {
+      servers: {
+        legacy: { transport: "http", url: server.url }
+      }
+    };
+
+    try {
+      const manifest = await discoverMcpManifestPromise(config);
+      expect(Object.keys(manifest.tools)).toEqual(["legacy.echo"]);
+
+      const runtime = await createMcpRuntime({ config, manifest });
+      try {
+        await expect(runtime.invoke("legacy.echo", { message: "hello" })).resolves.toMatchObject({
+          structuredContent: { message: "hello" },
+          isError: false
+        });
+      } finally {
+        await runtime.close();
+      }
+
+      expect(server.requests).toEqual([
+        "initialize",
+        "notifications/initialized",
+        "tools/list",
+        "DELETE",
+        "initialize",
+        "notifications/initialized",
+        "tools/call",
+        "DELETE"
+      ]);
+    } finally {
+      await server.close();
+    }
+  });
+
   it("rejects Streamable HTTP JSON-RPC responses with mismatched ids", async () => {
     const server = await startMismatchedIdHttpMcpServer();
     const config: TackConfig = {
@@ -952,6 +989,115 @@ async function startMismatchedIdHttpMcpServer(): Promise<{
 
   return {
     url: `http://127.0.0.1:${address.port}/mcp`,
+    close: () => new Promise((resolve) => {
+      server.closeAllConnections();
+      server.close(() => resolve());
+    })
+  };
+}
+
+async function startLegacyHttpMcpServer(): Promise<{
+  readonly url: string;
+  readonly requests: string[];
+  readonly close: () => Promise<void>;
+}> {
+  const requests: string[] = [];
+  let nextSession = 1;
+  const sessions = new Set<string>();
+  const server = createServer((request, response) => {
+    void (async () => {
+      if (request.url !== "/mcp") {
+        response.writeHead(404);
+        response.end();
+        return;
+      }
+      if (request.method === "DELETE") {
+        const session = request.headers["mcp-session-id"];
+        if (typeof session !== "string" || !sessions.delete(session)) {
+          response.writeHead(404);
+          response.end();
+          return;
+        }
+        requests.push("DELETE");
+        response.writeHead(200);
+        response.end();
+        return;
+      }
+      if (request.method !== "POST") {
+        response.writeHead(405);
+        response.end();
+        return;
+      }
+
+      const message = await readJson(request);
+      if (message.method === "initialize") {
+        if (request.headers["mcp-protocol-version"] !== undefined ||
+            message.params?.protocolVersion !== "2025-11-25") {
+          writeJson(response, 400, { jsonrpc: "2.0", id: message.id, error: { code: -32600, message: "bad initialize" } });
+          return;
+        }
+        const session = `legacy-${nextSession++}`;
+        sessions.add(session);
+        requests.push("initialize");
+        response.setHeader("mcp-session-id", session);
+        writeJson(response, 200, {
+          jsonrpc: "2.0",
+          id: message.id,
+          result: { protocolVersion: "2025-11-25", capabilities: {} }
+        });
+        return;
+      }
+
+      const session = request.headers["mcp-session-id"];
+      if (typeof session !== "string" || !sessions.has(session) ||
+          request.headers["mcp-protocol-version"] !== "2025-11-25") {
+        writeJson(response, 400, { jsonrpc: "2.0", id: message.id, error: { code: -32001, message: "session required" } });
+        return;
+      }
+      if (message.method === "notifications/initialized") {
+        requests.push("notifications/initialized");
+        response.writeHead(202);
+        response.end();
+        return;
+      }
+      if (message.method === "tools/list") {
+        requests.push("tools/list");
+        writeJson(response, 200, {
+          jsonrpc: "2.0",
+          id: message.id,
+          result: { tools: [{ name: "echo", inputSchema: { type: "object" } }] }
+        });
+        return;
+      }
+      if (message.method === "tools/call") {
+        requests.push("tools/call");
+        writeJson(response, 200, {
+          jsonrpc: "2.0",
+          id: message.id,
+          result: {
+            content: [{ type: "text", text: String(message.params?.arguments?.message) }],
+            structuredContent: { message: message.params?.arguments?.message },
+            isError: false
+          }
+        });
+        return;
+      }
+      writeJson(response, 200, { jsonrpc: "2.0", id: message.id, error: { code: -32601, message: "method not found" } });
+    })();
+  });
+
+  await new Promise<void>((resolve, reject) => {
+    server.once("error", reject);
+    server.listen(0, "127.0.0.1", () => {
+      server.off("error", reject);
+      resolve();
+    });
+  });
+  const address = server.address();
+  if (typeof address !== "object" || !address) throw new Error("legacy HTTP MCP server did not bind a port");
+  return {
+    url: `http://127.0.0.1:${address.port}/mcp`,
+    requests,
     close: () => new Promise((resolve) => {
       server.closeAllConnections();
       server.close(() => resolve());

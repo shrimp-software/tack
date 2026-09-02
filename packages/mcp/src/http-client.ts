@@ -8,22 +8,51 @@ import {
 import type { McpClient } from "./client.js";
 
 const MCP_PROTOCOL_VERSION = "2026-07-28";
+const LEGACY_MCP_PROTOCOL_VERSION = "2025-11-25";
 const CLIENT_INFO = { name: "tack", version: "1.0.1" } as const;
 
 type HttpServerConfig = Extract<TackServerConfig, { readonly transport: "http" }>;
 
 export class StreamableHttpMcpClient implements McpClient {
   private nextId = 1;
+  private mode: "unknown" | "stateless" | "stateful" = "unknown";
+  private sessionId: string | undefined;
+  private protocolVersion = LEGACY_MCP_PROTOCOL_VERSION;
   private readonly config: HttpServerConfig;
 
   constructor(config: HttpServerConfig) {
     this.config = normalizeHttpServerConfig(config);
   }
 
-  /** Stateless MCP has no transport handshake. */
-  async connect(): Promise<void> {}
+  /**
+   * Prefer stateless MCP, but retain support for servers that require the
+   * pre-2026 initialization/session flow. A successful initialize response is
+   * the unambiguous signal that the downstream is stateful.
+   */
+  async connect(): Promise<void> {
+    if (this.mode !== "unknown") return;
+
+    const initialId = this.nextId;
+    try {
+      const initialized = await this.legacyRequest("initialize", {
+        protocolVersion: LEGACY_MCP_PROTOCOL_VERSION,
+        capabilities: {},
+        clientInfo: CLIENT_INFO
+      }, { includeProtocolVersion: false });
+      this.protocolVersion = readProtocolVersion(initialized) ?? this.protocolVersion;
+      await this.legacyNotification("notifications/initialized", {});
+      this.mode = "stateful";
+    } catch {
+      // Stateless servers correctly reject initialize. Do not spend an RPC id
+      // on the compatibility probe, which keeps their first real request id 1.
+      this.nextId = initialId;
+      this.sessionId = undefined;
+      this.mode = "stateless";
+    }
+  }
 
   async listTools(): Promise<{ readonly tools: readonly unknown[] }> {
+    await this.connect();
     const tools: unknown[] = [];
     let cursor: string | undefined;
 
@@ -53,9 +82,27 @@ export class StreamableHttpMcpClient implements McpClient {
     }, { toolName: name });
   }
 
-  async close(): Promise<void> {}
+  async close(): Promise<void> {
+    if (this.mode !== "stateful" || !this.sessionId) return;
+
+    await fetch(this.config.url, {
+      method: "DELETE",
+      headers: this.legacyHeaders({ accept: "application/json" })
+    }).catch(() => undefined);
+  }
 
   private async request(
+    method: string,
+    params: Record<string, unknown>,
+    options: { readonly toolName?: string | undefined } = {}
+  ): Promise<unknown> {
+    await this.connect();
+    return this.mode === "stateful"
+      ? this.legacyRequest(method, params)
+      : this.statelessRequest(method, params, options);
+  }
+
+  private async statelessRequest(
     method: string,
     params: Record<string, unknown>,
     options: { readonly toolName?: string | undefined } = {}
@@ -63,7 +110,7 @@ export class StreamableHttpMcpClient implements McpClient {
     const id = this.nextId++;
     const response = await fetch(this.config.url, {
       method: "POST",
-      headers: this.headers({
+      headers: this.statelessHeaders({
         accept: "application/json, text/event-stream",
         contentType: "application/json",
         method,
@@ -87,7 +134,42 @@ export class StreamableHttpMcpClient implements McpClient {
     return readJsonRpcResult(await readJsonRpcResponse(response, id), method);
   }
 
-  private headers(input: {
+  private async legacyRequest(
+    method: string,
+    params: Record<string, unknown>,
+    options: { readonly includeProtocolVersion?: boolean | undefined } = {}
+  ): Promise<unknown> {
+    const id = this.nextId++;
+    const response = await fetch(this.config.url, {
+      method: "POST",
+      headers: this.legacyHeaders({
+        accept: "application/json, text/event-stream",
+        contentType: "application/json",
+        includeProtocolVersion: options.includeProtocolVersion ?? true
+      }),
+      body: JSON.stringify({ jsonrpc: "2.0", id, method, params })
+    });
+
+    const sessionId = response.headers.get("mcp-session-id");
+    if (sessionId) this.sessionId = sessionId;
+    return readJsonRpcResult(await readJsonRpcResponse(response, id), method);
+  }
+
+  private async legacyNotification(method: string, params: Record<string, unknown>): Promise<void> {
+    const response = await fetch(this.config.url, {
+      method: "POST",
+      headers: this.legacyHeaders({
+        accept: "application/json, text/event-stream",
+        contentType: "application/json"
+      }),
+      body: JSON.stringify({ jsonrpc: "2.0", method, params })
+    });
+    if (!response.ok && response.status !== 202) {
+      throw new Error(`MCP HTTP notification ${method} failed with HTTP ${response.status}: ${await response.text()}`);
+    }
+  }
+
+  private statelessHeaders(input: {
     readonly accept: string;
     readonly contentType?: string | undefined;
     readonly method: string;
@@ -101,6 +183,21 @@ export class StreamableHttpMcpClient implements McpClient {
     headers.set("mcp-protocol-version", MCP_PROTOCOL_VERSION);
     headers.set("mcp-method", input.method);
     if (input.toolName) headers.set("mcp-name", input.toolName);
+    return headers;
+  }
+
+  private legacyHeaders(input: {
+    readonly accept: string;
+    readonly contentType?: string | undefined;
+    readonly includeProtocolVersion?: boolean | undefined;
+  }): Headers {
+    const headers = new Headers(resolveHeaderValues(this.config.headers ?? {}));
+    headers.set("accept", input.accept);
+    if (input.contentType) headers.set("content-type", input.contentType);
+    if (this.sessionId) headers.set("mcp-session-id", this.sessionId);
+    if (input.includeProtocolVersion !== false) {
+      headers.set("mcp-protocol-version", this.protocolVersion);
+    }
     return headers;
   }
 }
@@ -155,6 +252,11 @@ function readJsonRpcResult(message: unknown, method: string): unknown {
     throw new Error(`MCP HTTP ${method} returned no result`);
   }
   return record["result"];
+}
+
+function readProtocolVersion(result: unknown): string | undefined {
+  const protocolVersion = asRecord(result)?.["protocolVersion"];
+  return typeof protocolVersion === "string" ? protocolVersion : undefined;
 }
 
 function parseSseJsonMessages(text: string): unknown[] {
