@@ -63,7 +63,7 @@ describe("runDelegate", () => {
       execute: async () => {
         call += 1;
         return call === 1
-          ? { ok: false, emitted: [], logs: [], error: { phase: "runtime", message: "boom is not defined" } }
+          ? { ok: false, emitted: [], logs: [], error: { phase: "runtime", code: "internal_error", message: "boom is not defined" } }
           : { ok: true, result: 5, emitted: [], logs: [] };
       },
       system: "sys",
@@ -80,7 +80,7 @@ describe("runDelegate", () => {
     const planner = scriptedPlanner([fence("boom")]);
     const outcome = await runDelegate({
       planner,
-      execute: async () => ({ ok: false, emitted: [], logs: [], error: { phase: "runtime", message: "nope" } }),
+      execute: async () => ({ ok: false, emitted: [], logs: [], error: { phase: "runtime", code: "internal_error", message: "nope" } }),
       system: "sys",
       goal: "fail",
       replans: 0

@@ -167,6 +167,7 @@ describe("MCP server", () => {
         logs: [],
         error: {
           phase: "parse",
+          code: "parse_error",
           message: "synthetic parse failure"
         }
       })
@@ -349,6 +350,7 @@ describe("MCP server", () => {
         logs: [],
         error: {
           phase: "runtime",
+          code: "internal_error",
           message: "x".repeat(40_000)
         }
       })
