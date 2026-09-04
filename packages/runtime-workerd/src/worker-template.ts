@@ -45,7 +45,7 @@ const callTool = async (env, counters, path, args = {}) => {
     });
     const data = await response.json();
     if (!data.ok) {
-      const code = typeof data.code === "string" && ["downstream_error", "tool_timeout", "cancelled", "internal_error"].includes(data.code)
+      const code = typeof data.code === "string" && ["downstream_error", "tool_timeout", "cancelled"].includes(data.code)
         ? "[tack:" + data.code + "] "
         : "";
       throw new Error(code + (data.error || "Tool bridge failed"));
@@ -120,7 +120,7 @@ export default {
         logs,
         error: {
           phase: String(error && error.message || error).includes("timed out") ? "timeout" : "runtime",
-          code: (String(error && error.message || error).match(/^\[tack:(downstream_error|tool_timeout|cancelled|internal_error)\]/) || [])[1] ||
+          code: (String(error && error.message || error).match(/^\[tack:(downstream_error|tool_timeout|cancelled)\]/) || [])[1] ||
             (String(error && error.message || error).includes("timed out") ? "execution_timeout" : "internal_error"),
           message: String(error && error.message || error).replace(/^\\[tack:[a-z_]+\\] /, "")
         }

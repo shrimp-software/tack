@@ -103,7 +103,7 @@ async function handleHostRequest(
 
 function isToolDispatchError(error: unknown): error is { readonly code: string } {
   return typeof error === "object" && error !== null && "code" in error &&
-    ["downstream_error", "tool_timeout", "cancelled", "internal_error"].includes(
+    ["downstream_error", "tool_timeout", "cancelled"].includes(
       String((error as { readonly code?: unknown }).code)
     );
 }

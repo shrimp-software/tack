@@ -15,7 +15,7 @@ import {
   renderCodeModeUserFunctionSource,
   throwIfAborted,
   validateCodeModeUserCode,
-  withTimeout
+  withActiveTimeout
 } from "@cbxss/tack-codemode";
 import { ownField } from "@cbxss/tack-core";
 import { transform } from "esbuild";
@@ -133,47 +133,6 @@ function readOwnNumber(
   return typeof value === "number" ? value : undefined;
 }
 
-/** Counts only time spent executing JavaScript; waiting on a live tool call is
- * governed by that tool's own timeout. */
-function withActiveTimeout<T>(input: {
-  readonly promise: Promise<T>;
-  readonly timeoutMs: number;
-  readonly signal: AbortSignal;
-  readonly activeElapsedMs: () => number;
-  readonly message: string;
-}): Promise<T> {
-  return new Promise((resolve, reject) => {
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    const cleanup = () => {
-      if (timer) clearTimeout(timer);
-      input.signal.removeEventListener("abort", abort);
-    };
-    const abort = () => {
-      cleanup();
-      reject(input.signal.reason ?? new Error("Operation aborted"));
-    };
-    const tick = () => {
-      if (input.activeElapsedMs() >= input.timeoutMs) {
-        cleanup();
-        reject(new CodeRuntimeTimeoutError(input.message));
-        return;
-      }
-      timer = setTimeout(tick, 10);
-    };
-
-    if (input.signal.aborted) {
-      abort();
-      return;
-    }
-    input.signal.addEventListener("abort", abort, { once: true });
-    timer = setTimeout(tick, 10);
-    input.promise.then(
-      (value) => { cleanup(); resolve(value); },
-      (error) => { cleanup(); reject(error); }
-    );
-  });
-}
-
 async function executeInQuickJS(input: ExecuteInQuickJSInput): Promise<ExecutionResult> {
   const limits = {
     ...input.limits,
@@ -205,14 +164,13 @@ async function executeInQuickJS(input: ExecuteInQuickJSInput): Promise<Execution
       toolCalls: 0,
       toolCallsInFlight: 0
     };
+    const runtimeState = state;
 
     let activeElapsedMs = 0;
     let lastClockSample = Date.now();
     const sampleActiveTime = () => {
       const now = Date.now();
-      if (state && state.toolCallsInFlight === 0) {
-        activeElapsedMs += now - lastClockSample;
-      }
+      if (runtimeState.toolCallsInFlight === 0) activeElapsedMs += now - lastClockSample;
       lastClockSample = now;
       return activeElapsedMs;
     };
@@ -224,10 +182,10 @@ async function executeInQuickJS(input: ExecuteInQuickJSInput): Promise<Execution
     });
 
     const result = await withActiveTimeout({
-      promise: runUserFunction(state, userFunctionSource),
+      promise: runUserFunction(runtimeState, userFunctionSource),
       timeoutMs: limits.timeoutMs,
       signal: input.signal,
-      activeElapsedMs: sampleActiveTime,
+      isPaused: () => runtimeState.toolCallsInFlight > 0,
       message: `QuickJS runtime execution timed out after ${limits.timeoutMs}ms`
     });
     return jsonExecutionResult({
@@ -503,12 +461,20 @@ async function createQuickJSSession(
   let closed = false;
   let running = false;
   let currentCell: Promise<unknown> = Promise.resolve();
-  let cellDeadline = Number.POSITIVE_INFINITY;
   let cellAbort: AbortSignal | undefined;
   let cellDeadlineExceeded = false;
+  let activeState: RuntimeState | undefined;
+  let activeElapsedMs = 0;
+  let lastClockSample = Date.now();
+  const sampleActiveTime = () => {
+    const now = Date.now();
+    if (activeState?.toolCallsInFlight === 0) activeElapsedMs += now - lastClockSample;
+    lastClockSample = now;
+    return activeElapsedMs;
+  };
 
   context.runtime.setInterruptHandler(() => {
-    cellDeadlineExceeded = cellDeadlineExceeded || Date.now() > cellDeadline;
+    cellDeadlineExceeded = cellDeadlineExceeded || sampleActiveTime() > perCellTimeoutMs;
     return closed || cellDeadlineExceeded || Boolean(cellAbort?.aborted);
   });
 
@@ -545,6 +511,9 @@ async function createQuickJSSession(
 
     cellAbort = signal;
     cellDeadlineExceeded = false;
+    activeState = state;
+    activeElapsedMs = 0;
+    lastClockSample = Date.now();
 
     let cellNames: readonly string[] = [];
     const newRefNames: string[] = [];
@@ -557,11 +526,11 @@ async function createQuickJSSession(
       });
       cellNames = transpiled.declaredNames;
 
-      cellDeadline = Date.now() + perCellTimeoutMs;
-      const result = await withTimeout({
+      const result = await withActiveTimeout({
         promise: runSessionCell(state, transpiled.source, { scopeHandle, refs, newRefNames }),
         timeoutMs: perCellTimeoutMs,
         signal,
+        isPaused: () => state.toolCallsInFlight > 0,
         message: `QuickJS session cell timed out after ${perCellTimeoutMs}ms`
       });
 
@@ -593,8 +562,8 @@ async function createQuickJSSession(
         outputLogs: logs
       });
     } finally {
-      cellDeadline = Number.POSITIVE_INFINITY;
       cellAbort = undefined;
+      activeState = undefined;
       state.closed = true;
       running = false;
     }
@@ -782,7 +751,7 @@ function rejectDeferred(
   state: RuntimeState,
   deferred: ReturnType<QuickJSAsyncContext["newPromise"]>,
   message: string,
-  code?: "downstream_error" | "tool_timeout" | "cancelled" | "internal_error"
+  code?: "downstream_error" | "tool_timeout" | "cancelled"
 ): void {
   const errorHandle = state.context.newError(code ? `[tack:${code}] ${message}` : message);
   try {
@@ -792,11 +761,11 @@ function rejectDeferred(
   }
 }
 
-function toolDispatchCode(error: unknown): "downstream_error" | "tool_timeout" | "cancelled" | "internal_error" {
+function toolDispatchCode(error: unknown): "downstream_error" | "tool_timeout" | "cancelled" {
   const code = typeof error === "object" && error !== null
     ? (error as { readonly code?: unknown }).code
     : undefined;
-  return code === "tool_timeout" || code === "cancelled" || code === "internal_error"
+  return code === "tool_timeout" || code === "cancelled"
     ? code
     : "downstream_error";
 }

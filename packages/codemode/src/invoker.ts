@@ -304,7 +304,7 @@ function parseJsonText(value: string): unknown {
 
 export class ToolDispatchError extends Error {
   constructor(
-    readonly code: "downstream_error" | "tool_timeout" | "cancelled" | "internal_error",
+    readonly code: "downstream_error" | "tool_timeout" | "cancelled",
     message: string,
     cause?: unknown
   ) {

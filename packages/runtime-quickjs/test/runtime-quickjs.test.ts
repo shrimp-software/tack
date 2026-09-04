@@ -467,6 +467,22 @@ describe("quickjs session", () => {
     expect(afterClose).toMatchObject({ ok: false, error: { message: "Session is closed" } });
   });
 
+  it("does not charge a live tool wait against a session cell budget", async () => {
+    const session = await createQuickJSRuntime({ timeoutMs: 50 }).createSession!();
+    try {
+      const result = await session.exec({
+        code: "return (await tools.demo.wait({})).data;",
+        invoker: {
+          invoke: () => new Promise((resolve) => setTimeout(() => resolve({ ok: true, data: "done", text: "done" }), 100))
+        },
+        toolsPrelude: renderToolsPrelude(["demo.wait"])
+      });
+      expect(result).toMatchObject({ ok: true, result: "done" });
+    } finally {
+      await session.close();
+    }
+  });
+
   it("retains a large return value as a ref and dereferences it", async () => {
     const runtime = createQuickJSRuntime({ timeoutMs: 5_000, maxInlineResultBytes: 200 });
     const session = await runtime.createSession!();

@@ -44,6 +44,54 @@ export function withTimeout<T>(input: {
   });
 }
 
+/**
+ * A timeout for runtime work which deliberately excludes time spent waiting on
+ * an external tool. Tool calls are bounded independently by `toolTimeoutMs`.
+ */
+export function withActiveTimeout<T>(input: {
+  readonly promise: Promise<T>;
+  readonly timeoutMs: number;
+  readonly signal: AbortSignal;
+  readonly isPaused: () => boolean;
+  readonly message: string;
+}): Promise<T> {
+  return new Promise((resolve, reject) => {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let elapsedMs = 0;
+    let sampledAt = Date.now();
+    const cleanup = () => {
+      if (timer) clearTimeout(timer);
+      input.signal.removeEventListener("abort", abort);
+    };
+    const abort = () => {
+      cleanup();
+      reject(abortReason(input.signal));
+    };
+    const tick = () => {
+      const now = Date.now();
+      if (!input.isPaused()) elapsedMs += now - sampledAt;
+      sampledAt = now;
+      if (elapsedMs >= input.timeoutMs) {
+        cleanup();
+        reject(new CodeRuntimeTimeoutError(input.message));
+        return;
+      }
+      timer = setTimeout(tick, 10);
+    };
+
+    if (input.signal.aborted) {
+      abort();
+      return;
+    }
+    input.signal.addEventListener("abort", abort, { once: true });
+    timer = setTimeout(tick, 10);
+    input.promise.then(
+      (value) => { cleanup(); resolve(value); },
+      (error) => { cleanup(); reject(error); }
+    );
+  });
+}
+
 export function delay(ms: number, signal: AbortSignal): Promise<void> {
   return new Promise((resolve, reject) => {
     const cleanup = () => {
