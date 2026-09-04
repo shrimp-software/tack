@@ -106,6 +106,7 @@ interface RuntimeState {
   readonly signal: AbortSignal;
   closed: boolean;
   toolCalls: number;
+  toolCallsInFlight: number;
 }
 
 function normalizeRuntimeOptions(options: QuickJSRuntimeOptions): QuickJSLimits {
@@ -130,6 +131,47 @@ function readOwnNumber(
 ): number | undefined {
   const value = ownField(options, key);
   return typeof value === "number" ? value : undefined;
+}
+
+/** Counts only time spent executing JavaScript; waiting on a live tool call is
+ * governed by that tool's own timeout. */
+function withActiveTimeout<T>(input: {
+  readonly promise: Promise<T>;
+  readonly timeoutMs: number;
+  readonly signal: AbortSignal;
+  readonly activeElapsedMs: () => number;
+  readonly message: string;
+}): Promise<T> {
+  return new Promise((resolve, reject) => {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const cleanup = () => {
+      if (timer) clearTimeout(timer);
+      input.signal.removeEventListener("abort", abort);
+    };
+    const abort = () => {
+      cleanup();
+      reject(input.signal.reason ?? new Error("Operation aborted"));
+    };
+    const tick = () => {
+      if (input.activeElapsedMs() >= input.timeoutMs) {
+        cleanup();
+        reject(new CodeRuntimeTimeoutError(input.message));
+        return;
+      }
+      timer = setTimeout(tick, 10);
+    };
+
+    if (input.signal.aborted) {
+      abort();
+      return;
+    }
+    input.signal.addEventListener("abort", abort, { once: true });
+    timer = setTimeout(tick, 10);
+    input.promise.then(
+      (value) => { cleanup(); resolve(value); },
+      (error) => { cleanup(); reject(error); }
+    );
+  });
 }
 
 async function executeInQuickJS(input: ExecuteInQuickJSInput): Promise<ExecutionResult> {
@@ -160,21 +202,32 @@ async function executeInQuickJS(input: ExecuteInQuickJSInput): Promise<Execution
       maxToolResponseBytes: limits.maxToolResponseBytes,
       signal: input.signal,
       closed: false,
-      toolCalls: 0
+      toolCalls: 0,
+      toolCallsInFlight: 0
     };
 
-    const deadline = Date.now() + limits.timeoutMs;
+    let activeElapsedMs = 0;
+    let lastClockSample = Date.now();
+    const sampleActiveTime = () => {
+      const now = Date.now();
+      if (state && state.toolCallsInFlight === 0) {
+        activeElapsedMs += now - lastClockSample;
+      }
+      lastClockSample = now;
+      return activeElapsedMs;
+    };
     context.runtime.setMemoryLimit(limits.memoryMb * 1024 * 1024);
     context.runtime.setMaxStackSize(limits.maxStackBytes);
     context.runtime.setInterruptHandler(() => {
-      deadlineExceeded = deadlineExceeded || Date.now() > deadline;
+      deadlineExceeded = deadlineExceeded || sampleActiveTime() > limits.timeoutMs;
       return deadlineExceeded || input.signal.aborted;
     });
 
-    const result = await withTimeout({
+    const result = await withActiveTimeout({
       promise: runUserFunction(state, userFunctionSource),
       timeoutMs: limits.timeoutMs,
       signal: input.signal,
+      activeElapsedMs: sampleActiveTime,
       message: `QuickJS runtime execution timed out after ${limits.timeoutMs}ms`
     });
     return jsonExecutionResult({
@@ -486,7 +539,8 @@ async function createQuickJSSession(
       maxToolResponseBytes: limits.maxToolResponseBytes,
       signal,
       closed: false,
-      toolCalls: 0
+      toolCalls: 0,
+      toolCallsInFlight: 0
     };
 
     cellAbort = signal;
@@ -688,6 +742,7 @@ function callToolFromQuickJS(
     return deferred.handle;
   }
 
+  state.toolCallsInFlight += 1;
   void Promise.resolve()
     .then(() => state.invoker.invoke(request))
     .then((result) => {
@@ -709,13 +764,12 @@ function callToolFromQuickJS(
           state,
           deferred,
           errorMessage(error),
-          typeof error === "object" && error !== null && (error as { readonly code?: unknown }).code === "tool_timeout"
-            ? "tool_timeout"
-            : "downstream_error"
+          toolDispatchCode(error)
         );
       }
     })
     .finally(() => {
+      state.toolCallsInFlight -= 1;
       if (!state.closed) {
         drainPendingJobs(context);
       }
@@ -728,7 +782,7 @@ function rejectDeferred(
   state: RuntimeState,
   deferred: ReturnType<QuickJSAsyncContext["newPromise"]>,
   message: string,
-  code?: "downstream_error" | "tool_timeout"
+  code?: "downstream_error" | "tool_timeout" | "cancelled" | "internal_error"
 ): void {
   const errorHandle = state.context.newError(code ? `[tack:${code}] ${message}` : message);
   try {
@@ -736,6 +790,15 @@ function rejectDeferred(
   } finally {
     disposeHandle(errorHandle);
   }
+}
+
+function toolDispatchCode(error: unknown): "downstream_error" | "tool_timeout" | "cancelled" | "internal_error" {
+  const code = typeof error === "object" && error !== null
+    ? (error as { readonly code?: unknown }).code
+    : undefined;
+  return code === "tool_timeout" || code === "cancelled" || code === "internal_error"
+    ? code
+    : "downstream_error";
 }
 
 function createConsoleHandle(state: RuntimeState): QuickJSHandle {

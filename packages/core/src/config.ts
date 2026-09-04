@@ -46,6 +46,7 @@ function buildConfigSchema(kinds: readonly SourceKind[]): z.ZodType<TackConfig> 
       .object({
         type: z.enum(["quickjs", "workerd"]).optional(),
         timeoutMs: z.number().int().positive().optional(),
+        toolTimeoutMs: z.number().int().positive().optional(),
         memoryMb: z.number().int().positive().optional(),
         maxStackBytes: z.number().int().positive().optional(),
         maxOutputBytes: z.number().int().positive().optional(),

@@ -16,6 +16,7 @@ export function createDefaultConfig(): TackConfig {
     runtime: {
       type: "quickjs",
       timeoutMs: 30_000,
+      toolTimeoutMs: 30_000,
       memoryMb: 128,
       maxStackBytes: 1_000_000,
       maxOutputBytes: 1_000_000,

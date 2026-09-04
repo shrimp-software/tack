@@ -116,7 +116,10 @@ async function executeInWorkerd(input: ExecuteInWorkerdInput): Promise<Execution
 
     const response = await runWorker({
       port: listenPort,
-      timeoutMs: settings.timeoutMs,
+      // The worker pauses its JS clock around host calls. This outer watchdog
+      // is only a process-safety backstop, so leave one tool-call budget for a
+      // request already in flight rather than racing it at the JS deadline.
+      timeoutMs: settings.timeoutMs + settings.toolTimeoutMs,
       hostTimeoutGraceMs: settings.hostTimeoutGraceMs,
       signal: input.signal
     });

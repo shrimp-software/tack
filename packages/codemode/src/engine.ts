@@ -184,6 +184,7 @@ function normalizeCodeRuntime(runtime: CodeRuntime): CodeRuntime {
   const name = ownField(runtime, "name");
   const isolation = ownField(runtime, "isolation");
   const timeoutMs = ownField(runtime, "timeoutMs");
+  const toolTimeoutMs = ownField(runtime, "toolTimeoutMs");
   const execute = ownField(runtime, "execute");
   const createSession = ownField(runtime, "createSession");
   if (typeof execute !== "function") {
@@ -194,6 +195,7 @@ function normalizeCodeRuntime(runtime: CodeRuntime): CodeRuntime {
     name: typeof name === "string" ? name : "unknown",
     isolation: isolation === "process" || isolation === "vm" ? isolation : "none",
     ...(typeof timeoutMs === "number" ? { timeoutMs } : {}),
+    ...(typeof toolTimeoutMs === "number" ? { toolTimeoutMs } : {}),
     execute: (input, signal) => execute.call(runtime, input, signal) as ReturnType<CodeRuntime["execute"]>,
     ...(typeof createSession === "function"
       ? {

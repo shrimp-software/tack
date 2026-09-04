@@ -305,6 +305,18 @@ return readFile;
     });
   });
 
+  it("does not charge a live tool wait against the JavaScript execution budget", async () => {
+    const result = await createQuickJSRuntime({ timeoutMs: 50 }).execute({
+      invoker: {
+        invoke: () => new Promise((resolve) => setTimeout(() => resolve({ ok: true, data: "done", text: "done" }), 100))
+      },
+      toolsPrelude: renderToolsPrelude(["demo.wait"]),
+      code: `return await tools.demo.wait({});`
+    });
+
+    expect(result).toMatchObject({ ok: true, result: { ok: true, data: "done" } });
+  });
+
   it("terminates runaway executions", async () => {
     const result = await createQuickJSRuntime({ timeoutMs: 300 }).execute({
       invoker: fakeInvoker([]),

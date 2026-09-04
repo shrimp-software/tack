@@ -19,7 +19,7 @@ export interface McpClient {
   callTool(input: {
     readonly name: string;
     readonly arguments: Record<string, unknown>;
-  }): Promise<unknown>;
+  }, options?: { readonly signal?: AbortSignal | undefined }): Promise<unknown>;
   close(): Promise<void>;
 }
 

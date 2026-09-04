@@ -889,6 +889,7 @@ describe("defaults", () => {
     expect(createDefaultConfig().runtime).toMatchObject({
       type: "quickjs",
       timeoutMs: 30_000,
+      toolTimeoutMs: 30_000,
       memoryMb: 128,
       maxStackBytes: 1_000_000,
       maxOutputBytes: 1_000_000,
@@ -974,6 +975,13 @@ describe("errors", () => {
 });
 
 describe("config", () => {
+  it("preserves the per-tool timeout", () => {
+    expect(parseConfig({
+      servers: { remote: { transport: "http", url: "https://example.com/mcp" } },
+      runtime: { timeoutMs: 1_000, toolTimeoutMs: 250 }
+    }).runtime).toEqual({ timeoutMs: 1_000, toolTimeoutMs: 250 });
+  });
+
   it("parses static security policy and audit config", () => {
     expect(parseConfig({
       servers: {

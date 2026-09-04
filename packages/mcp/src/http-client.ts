@@ -70,7 +70,7 @@ export class StreamableHttpMcpClient implements McpClient {
   callTool(input: {
     readonly name: string;
     readonly arguments: Record<string, unknown>;
-  }): Promise<unknown> {
+  }, options: { readonly signal?: AbortSignal | undefined } = {}): Promise<unknown> {
     const name = ownField<unknown>(input, "name");
     if (typeof name !== "string") {
       throw new Error("MCP HTTP tool name is required");
@@ -79,7 +79,7 @@ export class StreamableHttpMcpClient implements McpClient {
     return this.request("tools/call", {
       name,
       arguments: sanitizeRecord(ownField(input, "arguments"))
-    }, { toolName: name });
+    }, { toolName: name, ...(options.signal ? { signal: options.signal } : {}) });
   }
 
   async close(): Promise<void> {
@@ -94,18 +94,18 @@ export class StreamableHttpMcpClient implements McpClient {
   private async request(
     method: string,
     params: Record<string, unknown>,
-    options: { readonly toolName?: string | undefined } = {}
+    options: { readonly toolName?: string | undefined; readonly signal?: AbortSignal | undefined } = {}
   ): Promise<unknown> {
     await this.connect();
     return this.mode === "stateful"
-      ? this.legacyRequest(method, params)
+      ? this.legacyRequest(method, params, { ...(options.signal ? { signal: options.signal } : {}) })
       : this.statelessRequest(method, params, options);
   }
 
   private async statelessRequest(
     method: string,
     params: Record<string, unknown>,
-    options: { readonly toolName?: string | undefined } = {}
+    options: { readonly toolName?: string | undefined; readonly signal?: AbortSignal | undefined } = {}
   ): Promise<unknown> {
     const id = this.nextId++;
     const response = await fetch(this.config.url, {
@@ -116,6 +116,7 @@ export class StreamableHttpMcpClient implements McpClient {
         method,
         ...(options.toolName ? { toolName: options.toolName } : {})
       }),
+      ...(options.signal ? { signal: options.signal } : {}),
       body: JSON.stringify({
         jsonrpc: "2.0",
         id,
@@ -137,7 +138,7 @@ export class StreamableHttpMcpClient implements McpClient {
   private async legacyRequest(
     method: string,
     params: Record<string, unknown>,
-    options: { readonly includeProtocolVersion?: boolean | undefined } = {}
+    options: { readonly includeProtocolVersion?: boolean | undefined; readonly signal?: AbortSignal | undefined } = {}
   ): Promise<unknown> {
     const id = this.nextId++;
     const response = await fetch(this.config.url, {
@@ -147,6 +148,7 @@ export class StreamableHttpMcpClient implements McpClient {
         contentType: "application/json",
         includeProtocolVersion: options.includeProtocolVersion ?? true
       }),
+      ...(options.signal ? { signal: options.signal } : {}),
       body: JSON.stringify({ jsonrpc: "2.0", id, method, params })
     });
 

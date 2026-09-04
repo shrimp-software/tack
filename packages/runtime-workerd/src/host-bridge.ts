@@ -58,6 +58,7 @@ async function handleHostRequest(
     readonly invoker: ToolInvoker;
     readonly maxRequestBytes: number;
     readonly maxResponseBytes: number;
+    readonly signal: AbortSignal;
   },
   request: IncomingMessage,
   response: ServerResponse
@@ -87,7 +88,8 @@ async function handleHostRequest(
 
     const result = await options.invoker.invoke({
       path,
-      args: (body as Record<string, unknown>)["args"] ?? {}
+      args: (body as Record<string, unknown>)["args"] ?? {},
+      signal: options.signal
     });
     writeJsonLimited(response, 200, { ok: true, result }, options.maxResponseBytes);
   } catch (error) {
@@ -101,7 +103,9 @@ async function handleHostRequest(
 
 function isToolDispatchError(error: unknown): error is { readonly code: string } {
   return typeof error === "object" && error !== null && "code" in error &&
-    (error as { readonly code?: unknown }).code === "downstream_error";
+    ["downstream_error", "tool_timeout", "cancelled", "internal_error"].includes(
+      String((error as { readonly code?: unknown }).code)
+    );
 }
 
 function readBody(request: IncomingMessage, maxBytes: number): Promise<unknown> {

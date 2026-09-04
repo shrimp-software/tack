@@ -104,7 +104,8 @@ export async function createMcpToolRuntime(
   return {
     invoke: async <TStructured = unknown>(
       toolId: string,
-      args: unknown
+      args: unknown,
+      options: { readonly signal?: AbortSignal | undefined } = {}
     ): Promise<TackResult<TStructured>> => {
       const binding = bindingById.get(toolId);
       if (!binding) {
@@ -116,7 +117,7 @@ export async function createMcpToolRuntime(
         const raw = await connection.client.callTool({
           name: binding.upstreamName,
           arguments: sanitizeRecord(args)
-        });
+        }, options);
         return createTackResult<TStructured>(raw);
       } catch (cause) {
         throw new TackRuntimeError({
@@ -155,9 +156,9 @@ export async function createMcpRuntime(options: CreateMcpRuntimeOptions): Promis
   }
 
   return {
-    invoke: <TStructured = unknown>(toolId: string, args: unknown): Promise<TackResult<TStructured>> => {
+    invoke: <TStructured = unknown>(toolId: string, args: unknown, options?: { readonly signal?: AbortSignal | undefined }): Promise<TackResult<TStructured>> => {
       const error = invalid.get(toolId);
-      return error ? Promise.reject(error) : runtime.invoke<TStructured>(toolId, args);
+      return error ? Promise.reject(error) : runtime.invoke<TStructured>(toolId, args, options);
     },
     close: (): Promise<void> => runtime.close()
   };

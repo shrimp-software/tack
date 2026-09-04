@@ -33,21 +33,47 @@ const callTool = async (env, counters, path, args = {}) => {
     throw new Error("Exceeded maximum tool calls: " + MAX_TOOL_CALLS);
   }
 
-  const response = await env.HOST.fetch("http://host/tool", {
-    method: "POST",
-    headers: {
-      "content-type": "application/json",
-      "x-tack-token": RUNNER_TOKEN
-    },
-    body: JSON.stringify({ path, args })
-  });
-  const data = await response.json();
-  if (!data.ok) {
-    const code = data.code === "downstream_error" ? "[tack:downstream_error] " : "";
-    throw new Error(code + (data.error || "Tool bridge failed"));
+  counters.pendingToolCalls += 1;
+  try {
+    const response = await env.HOST.fetch("http://host/tool", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-tack-token": RUNNER_TOKEN
+      },
+      body: JSON.stringify({ path, args })
+    });
+    const data = await response.json();
+    if (!data.ok) {
+      const code = typeof data.code === "string" && ["downstream_error", "tool_timeout", "cancelled", "internal_error"].includes(data.code)
+        ? "[tack:" + data.code + "] "
+        : "";
+      throw new Error(code + (data.error || "Tool bridge failed"));
+    }
+    return data.result;
+  } finally {
+    counters.pendingToolCalls -= 1;
   }
-  return data.result;
 };
+
+const withActiveTimeout = (promise, counters) => new Promise((resolve, reject) => {
+  let activeElapsed = 0;
+  let last = Date.now();
+  const tick = () => {
+    const now = Date.now();
+    if (counters.pendingToolCalls === 0) activeElapsed += now - last;
+    last = now;
+    if (activeElapsed >= TIMEOUT_MS) {
+      clearInterval(timer);
+      reject(new Error("Workerd runtime execution timed out after " + TIMEOUT_MS + "ms"));
+    }
+  };
+  const timer = setInterval(tick, 10);
+  promise.then(
+    (value) => { clearInterval(timer); resolve(value); },
+    (error) => { clearInterval(timer); reject(error); }
+  );
+});
 
 const serializeResponse = (body) => {
   const text = JSON.stringify(body);
@@ -76,17 +102,14 @@ export default {
 
     const emitted = [];
     const logs = [];
-    const counters = { toolCalls: 0 };
+    const counters = { toolCalls: 0, pendingToolCalls: 0 };
     const sandboxConsole = makeConsole(logs);
     const emit = (value) => { emitted.push(value); };
     const invoke = (path, args = {}) => callTool(env, counters, path, args);
 
     try {
       const fn = env.UNSAFE_EVAL.eval(USER_CODE);
-      const result = await Promise.race([
-        fn(invoke, sandboxConsole, emit),
-        new Promise((_, reject) => setTimeout(() => reject(new Error("Workerd runtime execution timed out after " + TIMEOUT_MS + "ms")), TIMEOUT_MS))
-      ]);
+      const result = await withActiveTimeout(fn(invoke, sandboxConsole, emit), counters);
       return new Response(serializeResponse({ ok: true, result, emitted, logs }), {
         headers: { "content-type": "application/json" }
       });
@@ -97,7 +120,7 @@ export default {
         logs,
         error: {
           phase: String(error && error.message || error).includes("timed out") ? "timeout" : "runtime",
-          code: String(error && error.message || error).includes("[tack:downstream_error]") ? "downstream_error" :
+          code: (String(error && error.message || error).match(/^\[tack:(downstream_error|tool_timeout|cancelled|internal_error)\]/) || [])[1] ||
             (String(error && error.message || error).includes("timed out") ? "execution_timeout" : "internal_error"),
           message: String(error && error.message || error).replace(/^\\[tack:[a-z_]+\\] /, "")
         }

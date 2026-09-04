@@ -166,12 +166,22 @@ async function invokeOperation(
     toolId: operation.toolId
   });
 
+  const controller = new AbortController();
+  const abort = () => controller.abort(signal?.reason);
+  if (signal) {
+    if (signal.aborted) {
+      abort();
+    } else {
+      signal.addEventListener("abort", abort, { once: true });
+    }
+  }
+
   try {
-    const invoke = context.runtime.invoke(operation.toolId, operationArgs(operation, args), { ...(signal ? { signal } : {}) });
+    const invoke = context.runtime.invoke(operation.toolId, operationArgs(operation, args), { signal: controller.signal });
     const result = context.toolTimeoutMs === undefined ? await invoke : await withTimeout({
       promise: invoke,
       timeoutMs: context.toolTimeoutMs,
-      signal: signal ?? new AbortController().signal,
+      signal: controller.signal,
       message: `Tool call timed out after ${context.toolTimeoutMs}ms`
     });
     const text = result.text();
@@ -210,6 +220,9 @@ async function invokeOperation(
       raw: result.raw
     };
   } catch (error) {
+    if (error instanceof CodeRuntimeTimeoutError) {
+      controller.abort(error);
+    }
     const message = error instanceof Error ? error.message : `Failed to call ${operation.fullPathString}`;
     await emitAudit(context, {
       type: "tool_call",
@@ -225,10 +238,16 @@ async function invokeOperation(
     // rather than a tool returning a valid MCP `isError` result. Let the code
     // runtime reject here so `execute` finishes with that error immediately.
     throw new ToolDispatchError(
-      error instanceof CodeRuntimeTimeoutError ? "tool_timeout" : "downstream_error",
+      error instanceof CodeRuntimeTimeoutError
+        ? "tool_timeout"
+        : controller.signal.aborted && signal?.aborted
+          ? "cancelled"
+          : "downstream_error",
       message,
       error
     );
+  } finally {
+    signal?.removeEventListener("abort", abort);
   }
 }
 
