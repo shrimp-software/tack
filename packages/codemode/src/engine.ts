@@ -116,7 +116,7 @@ export function createExecutionEngine(
             ok: false,
             emitted: [],
             logs: [],
-            error: { phase: "typecheck", message: formatTypeDiagnostics(outcome.diagnostics) },
+            error: { phase: "typecheck", code: "typecheck_error", message: formatTypeDiagnostics(outcome.diagnostics) },
             typeDiagnostics: outcome.diagnostics,
             trace: summarizeTrace({ runtime: codeRuntime, startedAt, startedAtMs, events: [] })
           };
@@ -129,6 +129,7 @@ export function createExecutionEngine(
       manifest,
       runtime,
       executionId,
+      ...(typeof codeRuntime.toolTimeoutMs === "number" ? { toolTimeoutMs: codeRuntime.toolTimeoutMs } : {}),
       ...(policy ? { policy } : {}),
       onTraceEvent: (event) => {
         traceEvents.push(event);

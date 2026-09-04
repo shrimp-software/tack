@@ -93,9 +93,15 @@ async function handleHostRequest(
   } catch (error) {
     writeJson(response, 200, {
       ok: false,
-      error: error instanceof Error ? error.message : String(error)
+      error: error instanceof Error ? error.message : String(error),
+      ...(isToolDispatchError(error) ? { code: error.code } : {})
     });
   }
+}
+
+function isToolDispatchError(error: unknown): error is { readonly code: string } {
+  return typeof error === "object" && error !== null && "code" in error &&
+    (error as { readonly code?: unknown }).code === "downstream_error";
 }
 
 function readBody(request: IncomingMessage, maxBytes: number): Promise<unknown> {

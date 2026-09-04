@@ -49,6 +49,7 @@ describe("quickjs runtime setup", () => {
       logs: [],
       error: {
         phase: "parse",
+        code: "parse_error",
         message: "code is required"
       }
     });
@@ -75,6 +76,7 @@ describe("quickjs runtime setup", () => {
       logs: [],
       error: {
         phase: "parse",
+        code: "parse_error",
         message: "tool invoker is required"
       }
     });

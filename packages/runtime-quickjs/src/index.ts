@@ -29,6 +29,7 @@ import { rewriteCellScope } from "./scope-rewrite.js";
 
 export interface QuickJSRuntimeOptions {
   readonly timeoutMs?: number;
+  readonly toolTimeoutMs?: number;
   readonly memoryMb?: number;
   readonly maxStackBytes?: number;
   readonly maxOutputBytes?: number;
@@ -57,6 +58,7 @@ export function createQuickJSRuntime(options: QuickJSRuntimeOptions = {}): CodeR
     name: "quickjs",
     isolation: "vm",
     timeoutMs: limits.timeoutMs,
+    toolTimeoutMs: limits.toolTimeoutMs,
     execute: (input, signal = new AbortController().signal) => {
       const normalizedInput = normalizeExecuteInput(input);
       if (!normalizedInput.ok) {
@@ -83,6 +85,7 @@ interface ExecuteInQuickJSInput {
 
 interface QuickJSLimits {
   readonly timeoutMs: number;
+  readonly toolTimeoutMs: number;
   readonly memoryMb: number;
   readonly maxStackBytes: number;
   readonly maxOutputBytes: number;
@@ -100,6 +103,7 @@ interface RuntimeState {
   readonly maxToolCalls: number;
   readonly maxToolRequestBytes: number;
   readonly maxToolResponseBytes: number;
+  readonly signal: AbortSignal;
   closed: boolean;
   toolCalls: number;
 }
@@ -107,6 +111,7 @@ interface RuntimeState {
 function normalizeRuntimeOptions(options: QuickJSRuntimeOptions): QuickJSLimits {
   return {
     timeoutMs: readOwnNumber(options, "timeoutMs") ?? DEFAULT_TIMEOUT_MS,
+    toolTimeoutMs: readOwnNumber(options, "toolTimeoutMs") ?? (readOwnNumber(options, "timeoutMs") ?? DEFAULT_TIMEOUT_MS),
     memoryMb: readOwnNumber(options, "memoryMb") ?? DEFAULT_MEMORY_MB,
     maxStackBytes: readOwnNumber(options, "maxStackBytes") ?? DEFAULT_MAX_STACK_BYTES,
     maxOutputBytes: readOwnNumber(options, "maxOutputBytes") ?? DEFAULT_MAX_OUTPUT_BYTES,
@@ -153,6 +158,7 @@ async function executeInQuickJS(input: ExecuteInQuickJSInput): Promise<Execution
       maxToolCalls: limits.maxToolCalls,
       maxToolRequestBytes: limits.maxToolRequestBytes,
       maxToolResponseBytes: limits.maxToolResponseBytes,
+      signal: input.signal,
       closed: false,
       toolCalls: 0
     };
@@ -193,7 +199,8 @@ async function executeInQuickJS(input: ExecuteInQuickJSInput): Promise<Execution
         logs,
         error: {
           phase: errorPhase(error, deadlineExceeded),
-          message: errorMessage(error)
+          code: errorCode(error, deadlineExceeded),
+          message: publicErrorMessage(error)
         }
       },
       maxOutputBytes: limits.maxOutputBytes,
@@ -457,13 +464,13 @@ async function createQuickJSSession(
     signal: AbortSignal = new AbortController().signal
   ): Promise<ExecutionResult> => {
     if (closed) {
-      return { ok: false, emitted: [], logs: [], error: { phase: "runtime", message: "Session is closed" } };
+      return { ok: false, emitted: [], logs: [], error: { phase: "runtime", code: "internal_error", message: "Session is closed" } };
     }
     if (running) {
-      return { ok: false, emitted: [], logs: [], error: { phase: "runtime", message: "Session is already running a cell" } };
+      return { ok: false, emitted: [], logs: [], error: { phase: "runtime", code: "internal_error", message: "Session is already running a cell" } };
     }
     if (maxLifetimeMs !== undefined && Date.now() - startedAtMs > maxLifetimeMs) {
-      return { ok: false, emitted: [], logs: [], error: { phase: "timeout", message: `Session exceeded its ${maxLifetimeMs}ms lifetime` } };
+      return { ok: false, emitted: [], logs: [], error: { phase: "timeout", code: "execution_timeout", message: `Session exceeded its ${maxLifetimeMs}ms lifetime` } };
     }
 
     running = true;
@@ -477,6 +484,7 @@ async function createQuickJSSession(
       maxToolCalls: limits.maxToolCalls,
       maxToolRequestBytes: limits.maxToolRequestBytes,
       maxToolResponseBytes: limits.maxToolResponseBytes,
+      signal,
       closed: false,
       toolCalls: 0
     };
@@ -521,7 +529,11 @@ async function createQuickJSSession(
           ok: false,
           emitted,
           logs,
-          error: { phase: errorPhase(error, cellDeadlineExceeded), message: errorMessage(error) }
+          error: {
+            phase: errorPhase(error, cellDeadlineExceeded),
+            code: errorCode(error, cellDeadlineExceeded),
+            message: publicErrorMessage(error)
+          }
         },
         maxOutputBytes: limits.maxOutputBytes,
         outputLogs: logs
@@ -667,7 +679,7 @@ function callToolFromQuickJS(
 
   const path = context.getString(pathHandle);
   const args = argsHandle ? snapshotQuickJSValue(context, argsHandle) ?? {} : {};
-  const request = { path, args };
+  const request = { path, args, signal: state.signal };
 
   try {
     assertJsonByteLimit(request, state.maxToolRequestBytes, "Tool bridge request");
@@ -693,7 +705,14 @@ function callToolFromQuickJS(
     })
     .catch((error) => {
       if (!state.closed) {
-        rejectDeferred(state, deferred, errorMessage(error));
+        rejectDeferred(
+          state,
+          deferred,
+          errorMessage(error),
+          typeof error === "object" && error !== null && (error as { readonly code?: unknown }).code === "tool_timeout"
+            ? "tool_timeout"
+            : "downstream_error"
+        );
       }
     })
     .finally(() => {
@@ -708,9 +727,10 @@ function callToolFromQuickJS(
 function rejectDeferred(
   state: RuntimeState,
   deferred: ReturnType<QuickJSAsyncContext["newPromise"]>,
-  message: string
+  message: string,
+  code?: "downstream_error" | "tool_timeout"
 ): void {
-  const errorHandle = state.context.newError(message);
+  const errorHandle = state.context.newError(code ? `[tack:${code}] ${message}` : message);
   try {
     deferred.reject(errorHandle);
   } finally {
@@ -869,6 +889,7 @@ function jsonExecutionResult(input: {
       logs: input.outputLogs,
       error: {
         phase: "runtime",
+        code: "internal_error",
         message: `Execution output is not JSON serializable: ${errorMessage(error)}`
       }
     };
@@ -881,6 +902,7 @@ function jsonExecutionResult(input: {
       logs: input.outputLogs,
       error: {
         phase: "runtime",
+        code: "internal_error",
         message: `Execution output exceeded ${input.maxOutputBytes} bytes`
       }
     };
@@ -912,4 +934,22 @@ function errorPhase(error: unknown, deadlineExceeded: boolean): ExecuteErrorPhas
     return "timeout";
   }
   return error instanceof CodeModeParseError ? "parse" : "runtime";
+}
+
+function errorCode(error: unknown, deadlineExceeded: boolean): import("@cbxss/tack-codemode").ExecuteErrorCode {
+  if (error instanceof CodeRuntimeTimeoutError || deadlineExceeded) return "execution_timeout";
+  if (error instanceof CodeModeParseError) return "parse_error";
+  if (errorMessage(error).startsWith("[tack:downstream_error] ")) return "downstream_error";
+  if (errorMessage(error).startsWith("[tack:tool_timeout] ")) return "tool_timeout";
+  if (typeof error === "object" && error !== null && "code" in error) {
+    const code = (error as { readonly code?: unknown }).code;
+    if (code === "downstream_error" || code === "tool_timeout" || code === "cancelled" || code === "internal_error") {
+      return code;
+    }
+  }
+  return "internal_error";
+}
+
+function publicErrorMessage(error: unknown): string {
+  return errorMessage(error).replace(/^\[tack:[a-z_]+\] /u, "");
 }

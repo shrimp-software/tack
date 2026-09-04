@@ -207,6 +207,42 @@ describe("MCP server", () => {
     }
   });
 
+  it("propagates a downstream invocation exception through execute without timing out", async () => {
+    const runtime: TackRuntime = {
+      invoke: async () => {
+        throw new Error("downstream exploded");
+      },
+      close: async () => {}
+    };
+    const server = createTackAgentServer({
+      manifest: grafanaManifest(),
+      runtime,
+      codeRuntime: createQuickJSRuntime({ timeoutMs: 1_000 })
+    });
+    const client = new Client({ name: "tack-test", version: "0.1.0" });
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+
+    await Promise.all([
+      server.connect(serverTransport),
+      client.connect(clientTransport)
+    ]);
+
+    try {
+      const executed = await client.callTool({
+        name: "execute",
+        arguments: { code: "return await tools.grafana.datasources.list();" }
+      });
+
+      expect(executed.isError).toBe(true);
+      expect(executed.structuredContent).toMatchObject({
+        status: "error",
+        error: { phase: "runtime", code: "downstream_error", message: "downstream exploded" }
+      });
+    } finally {
+      await Promise.allSettled([client.close(), server.close()]);
+    }
+  });
+
   it("formats MCP execute content without dumping the full execution envelope", async () => {
     const codeRuntime: CodeRuntime = {
       name: "test",

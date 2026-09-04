@@ -368,7 +368,7 @@ class SessionStore {
 }
 
 function sessionError(message: string): ExecutionResult {
-  return { ok: false, emitted: [], logs: [], error: { phase: "runtime", message } };
+  return { ok: false, emitted: [], logs: [], error: { phase: "runtime", code: "internal_error", message } };
 }
 
 /**
@@ -462,6 +462,7 @@ function executeStructuredContent(result: ExecutionResult, session?: string): Ex
       status: "error",
       error: result.error ?? {
         phase: "runtime",
+        code: "internal_error",
         message: "Execution failed"
       },
       ...sessionField,

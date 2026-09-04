@@ -1,6 +1,7 @@
 export interface ToolInvokeInput {
   readonly path: string;
   readonly args: unknown;
+  readonly signal?: AbortSignal | undefined;
 }
 
 export interface ToolCallOutput {
@@ -9,9 +10,20 @@ export interface ToolCallOutput {
   readonly text: string;
   readonly raw?: unknown;
   readonly error?: {
+    readonly code: ToolErrorCode;
     readonly message: string;
   };
 }
+
+/** Stable, machine-readable failure kinds exposed to code-mode callers. */
+export type ToolErrorCode =
+  | "unknown_operation"
+  | "operation_denied"
+  | "tool_error"
+  | "downstream_error"
+  | "tool_timeout"
+  | "cancelled"
+  | "internal_error";
 
 export interface ToolInvoker {
   invoke(input: ToolInvokeInput): Promise<unknown>;
@@ -21,8 +33,15 @@ export type ExecuteErrorPhase = "parse" | "typecheck" | "runtime" | "timeout";
 
 export interface ExecuteError {
   readonly phase: ExecuteErrorPhase;
+  readonly code: ExecuteErrorCode;
   readonly message: string;
 }
+
+export type ExecuteErrorCode =
+  | ToolErrorCode
+  | "parse_error"
+  | "typecheck_error"
+  | "execution_timeout";
 
 export interface ExecutionResult {
   readonly executionId?: string | undefined;
@@ -188,6 +207,7 @@ export interface CodeRuntime {
   readonly name: string;
   readonly isolation: "none" | "vm" | "process";
   readonly timeoutMs?: number;
+  readonly toolTimeoutMs?: number;
   execute(input: CodeRuntimeExecuteInput, signal?: AbortSignal): Promise<ExecutionResult>;
   /** Present only on runtimes that support stateful sessions (QuickJS). */
   createSession?(options?: CodeSessionOptions): Promise<CodeSession>;

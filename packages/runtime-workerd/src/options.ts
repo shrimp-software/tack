@@ -2,6 +2,7 @@ import { ownField } from "@cbxss/tack-core";
 
 export interface WorkerdRuntimeOptions {
   readonly timeoutMs?: number;
+  readonly toolTimeoutMs?: number;
   readonly memoryMb?: number;
   readonly maxOutputBytes?: number;
   readonly maxToolCalls?: number;
@@ -14,6 +15,7 @@ export interface WorkerdRuntimeOptions {
 
 export interface WorkerdRuntimeSettings {
   readonly timeoutMs: number;
+  readonly toolTimeoutMs: number;
   readonly memoryMb?: number | undefined;
   readonly maxOutputBytes: number;
   readonly maxToolCalls: number;
@@ -35,6 +37,7 @@ const DEFAULT_HOST_TIMEOUT_GRACE_MS = 2_000;
 export function normalizeRuntimeOptions(options: WorkerdRuntimeOptions): WorkerdRuntimeSettings {
   return {
     timeoutMs: readOwnNumber(options, "timeoutMs") ?? DEFAULT_TIMEOUT_MS,
+    toolTimeoutMs: readOwnNumber(options, "toolTimeoutMs") ?? (readOwnNumber(options, "timeoutMs") ?? DEFAULT_TIMEOUT_MS),
     ...optionalNumber(options, "memoryMb"),
     maxOutputBytes: readOwnNumber(options, "maxOutputBytes") ?? DEFAULT_MAX_OUTPUT_BYTES,
     maxToolCalls: readOwnNumber(options, "maxToolCalls") ?? DEFAULT_MAX_TOOL_CALLS,

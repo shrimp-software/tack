@@ -113,6 +113,7 @@ function invalidInputResult(message: string): ExecutionResult {
     logs: [],
     error: {
       phase: "parse",
+      code: "parse_error",
       message
     }
   };

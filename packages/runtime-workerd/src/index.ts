@@ -42,6 +42,7 @@ export function createWorkerdRuntime(options: WorkerdRuntimeOptions = {}): CodeR
     name: "workerd",
     isolation: "process",
     timeoutMs: settings.timeoutMs,
+    toolTimeoutMs: settings.toolTimeoutMs,
     execute: (input, signal = new AbortController().signal) => {
       const normalizedInput = normalizeExecuteInput(input);
       if (!normalizedInput.ok) {
@@ -131,6 +132,7 @@ async function executeInWorkerd(input: ExecuteInWorkerdInput): Promise<Execution
       logs: [],
       error: {
         phase: error instanceof CodeRuntimeTimeoutError ? "timeout" : error instanceof CodeModeParseError ? "parse" : "runtime",
+        code: error instanceof CodeRuntimeTimeoutError ? "execution_timeout" : error instanceof CodeModeParseError ? "parse_error" : "internal_error",
         message: withStderrTail(errorMessage(error), workerd?.stderrTail() ?? "")
       }
     };

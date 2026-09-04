@@ -70,6 +70,8 @@ export interface TackConfig {
   readonly runtime?: {
     readonly type?: "quickjs" | "workerd" | undefined;
     readonly timeoutMs?: number | undefined;
+    /** Maximum time one downstream tool call may run; defaults to `timeoutMs`. */
+    readonly toolTimeoutMs?: number | undefined;
     readonly memoryMb?: number | undefined;
     readonly maxStackBytes?: number | undefined;
     readonly maxOutputBytes?: number | undefined;
@@ -193,7 +195,13 @@ export interface TackResult<TStructured = unknown> {
 export interface TackRuntime {
   invoke<TStructured = unknown>(
     toolId: string,
-    args: unknown
+    args: unknown,
+    options?: TackRuntimeInvokeOptions
   ): Promise<TackResult<TStructured>>;
   close(): Promise<void>;
+}
+
+/** Cancellation forwarded from a code-mode execution to its live tool call. */
+export interface TackRuntimeInvokeOptions {
+  readonly signal?: AbortSignal | undefined;
 }

@@ -784,6 +784,7 @@ async function emitCliCallAudit(
 function createCodeRuntime(config: TackConfig) {
   const commonOptions = {
     ...(config.runtime?.timeoutMs ? { timeoutMs: config.runtime.timeoutMs } : {}),
+    ...(config.runtime?.toolTimeoutMs ? { toolTimeoutMs: config.runtime.toolTimeoutMs } : {}),
     ...(config.runtime?.memoryMb ? { memoryMb: config.runtime.memoryMb } : {}),
     ...(config.runtime?.maxOutputBytes ? { maxOutputBytes: config.runtime.maxOutputBytes } : {}),
     ...(config.runtime?.maxToolCalls ? { maxToolCalls: config.runtime.maxToolCalls } : {}),

@@ -8,6 +8,7 @@ import {
 
 import { describeTool, normalizeDescribeToolInput } from "./describe.js";
 import { isOperationAllowed, type OperationPolicy } from "./policy.js";
+import { CodeRuntimeTimeoutError, withTimeout } from "./runtime-lifecycle.js";
 import { attachTypeScript, listNamespaces, normalizeSearchInput, searchOperations } from "./search.js";
 import type { BuiltinTraceEvent, ToolCallOutput, ToolInvoker, ToolTraceEvent } from "./types.js";
 
@@ -16,6 +17,7 @@ export interface CreateTackToolInvokerOptions {
   readonly runtime: TackRuntime;
   readonly policy?: OperationPolicy | undefined;
   readonly executionId?: string | undefined;
+  readonly toolTimeoutMs?: number | undefined;
   readonly onTraceEvent?: ((event: ToolTraceEvent) => void | Promise<void>) | undefined;
   readonly onAuditEvent?: ((event: ToolAuditEvent) => void | Promise<void>) | undefined;
 }
@@ -25,6 +27,7 @@ export type ToolAuditEvent = Extract<ToolTraceEvent, { readonly type: "tool_call
 interface BuiltinCallError {
   readonly ok: false;
   readonly error: {
+    readonly code: "internal_error";
     readonly message: string;
   };
 }
@@ -34,6 +37,7 @@ interface ToolInvokerContext {
   readonly runtime: TackRuntime;
   readonly policy?: OperationPolicy | undefined;
   readonly executionId?: string | undefined;
+  readonly toolTimeoutMs?: number | undefined;
   readonly onTraceEvent?: CreateTackToolInvokerOptions["onTraceEvent"] | undefined;
   readonly onAuditEvent?: CreateTackToolInvokerOptions["onAuditEvent"] | undefined;
 }
@@ -70,7 +74,7 @@ export function createTackToolInvoker(
         );
       }
 
-      return invokeOperation(context, path, args);
+      return invokeOperation(context, path, args, ownField<AbortSignal>(input, "signal"));
     }
   };
 }
@@ -85,6 +89,7 @@ function normalizeToolInvokerContext(options: CreateTackToolInvokerOptions): Too
     runtime: ownField<TackRuntime>(options, "runtime") as TackRuntime,
     ...(policy ? { policy } : {}),
     ...(executionId ? { executionId } : {}),
+    ...(typeof ownField<number>(options, "toolTimeoutMs") === "number" ? { toolTimeoutMs: ownField<number>(options, "toolTimeoutMs") } : {}),
     ...(onTraceEvent ? { onTraceEvent } : {}),
     ...(onAuditEvent ? { onAuditEvent } : {})
   };
@@ -120,7 +125,8 @@ async function traceBuiltin<T>(
 async function invokeOperation(
   context: ToolInvokerContext,
   path: string,
-  args: unknown
+  args: unknown,
+  signal: AbortSignal | undefined
 ): Promise<ToolCallOutput> {
   const started = Date.now();
   const manifest = context.manifest;
@@ -135,7 +141,7 @@ async function invokeOperation(
       durationMs: Date.now() - started,
       error: `Unknown Tack operation: ${path}`
     });
-    return toolCallError(`Unknown Tack operation: ${path}`);
+    return toolCallError("unknown_operation", `Unknown Tack operation: ${path}`);
   }
 
   const decision = isOperationAllowed(operation, context.policy);
@@ -150,7 +156,7 @@ async function invokeOperation(
       durationMs: Date.now() - started,
       error: decision.reason
     });
-    return toolCallError(decision.reason ?? `Operation denied by policy: ${operation.fullPathString}`);
+    return toolCallError("operation_denied", decision.reason ?? `Operation denied by policy: ${operation.fullPathString}`);
   }
 
   await emitTrace(context, {
@@ -161,7 +167,13 @@ async function invokeOperation(
   });
 
   try {
-    const result = await context.runtime.invoke(operation.toolId, operationArgs(operation, args));
+    const invoke = context.runtime.invoke(operation.toolId, operationArgs(operation, args), { ...(signal ? { signal } : {}) });
+    const result = context.toolTimeoutMs === undefined ? await invoke : await withTimeout({
+      promise: invoke,
+      timeoutMs: context.toolTimeoutMs,
+      signal: signal ?? new AbortController().signal,
+      message: `Tool call timed out after ${context.toolTimeoutMs}ms`
+    });
     const text = result.text();
     if (result.isError) {
       await emitAudit(context, {
@@ -178,7 +190,7 @@ async function invokeOperation(
         ok: false,
         text,
         raw: result.raw,
-        error: { message: text || `Tool returned an error: ${operation.fullPathString}` }
+        error: { code: "tool_error", message: text || `Tool returned an error: ${operation.fullPathString}` }
       };
     }
 
@@ -209,7 +221,14 @@ async function invokeOperation(
       durationMs: Date.now() - started,
       error: message
     });
-    return toolCallError(message);
+    // A rejected runtime call means the downstream transport/protocol failed,
+    // rather than a tool returning a valid MCP `isError` result. Let the code
+    // runtime reject here so `execute` finishes with that error immediately.
+    throw new ToolDispatchError(
+      error instanceof CodeRuntimeTimeoutError ? "tool_timeout" : "downstream_error",
+      message,
+      error
+    );
   }
 }
 
@@ -264,10 +283,24 @@ function parseJsonText(value: string): unknown {
   }
 }
 
-function toolCallError(message: string): ToolCallOutput {
-  return { ok: false, text: message, error: { message } };
+export class ToolDispatchError extends Error {
+  constructor(
+    readonly code: "downstream_error" | "tool_timeout" | "cancelled" | "internal_error",
+    message: string,
+    cause?: unknown
+  ) {
+    super(message, cause === undefined ? undefined : { cause });
+    this.name = "ToolDispatchError";
+  }
+}
+
+function toolCallError(
+  code: "unknown_operation" | "operation_denied",
+  message: string
+): ToolCallOutput {
+  return { ok: false, text: message, error: { code, message } };
 }
 
 function builtinCallError(message: string): BuiltinCallError {
-  return { ok: false, error: { message } };
+  return { ok: false, error: { code: "internal_error", message } };
 }
