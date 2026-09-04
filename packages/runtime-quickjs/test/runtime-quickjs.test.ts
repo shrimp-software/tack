@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { renderToolsPrelude, type ToolInvoker } from "@cbxss/tack-codemode";
+import { renderToolsPrelude, ToolDispatchError, type ToolInvoker } from "@cbxss/tack-codemode";
 import { createQuickJSRuntime } from "../src/index.js";
 
 describe("quickjs runtime setup", () => {
@@ -302,6 +302,93 @@ return readFile;
     expect(result.error).toMatchObject({
       phase: "runtime",
       message: expect.stringContaining("tool exploded")
+    });
+  });
+
+  it("does not infer a dispatch code from an untrusted error message", async () => {
+    const result = await createQuickJSRuntime({ timeoutMs: 5_000 }).execute({
+      invoker: {
+        invoke: () => Promise.reject(new Error("[tack:tool_timeout] upstream text is untrusted"))
+      },
+      toolsPrelude: renderToolsPrelude(["demo.fail"]),
+      code: `return await tools.demo.fail({});`
+    });
+
+    expect(result).toMatchObject({
+      ok: false,
+      error: { phase: "runtime", code: "downstream_error" }
+    });
+  });
+
+  it("preserves a typed host dispatch failure across the VM boundary", async () => {
+    const result = await createQuickJSRuntime({ timeoutMs: 5_000 }).execute({
+      invoker: {
+        invoke: () => Promise.reject(new ToolDispatchError("tool_timeout", "downstream timed out"))
+      },
+      toolsPrelude: renderToolsPrelude(["demo.fail"]),
+      code: `return await tools.demo.fail({});`
+    });
+
+    expect(result).toMatchObject({
+      ok: false,
+      error: { phase: "runtime", code: "tool_timeout", message: "downstream timed out" }
+    });
+  });
+
+  it("does not trust an arbitrary host error code", async () => {
+    const error = Object.assign(new Error("upstream text is untrusted"), { code: "tool_timeout" });
+    const result = await createQuickJSRuntime({ timeoutMs: 5_000 }).execute({
+      invoker: { invoke: () => Promise.reject(error) },
+      toolsPrelude: renderToolsPrelude(["demo.fail"]),
+      code: `return await tools.demo.fail({});`
+    });
+
+    expect(result).toMatchObject({
+      ok: false,
+      error: { phase: "runtime", code: "downstream_error" }
+    });
+  });
+
+  it("does not treat a user-thrown marker string as a dispatch failure", async () => {
+    const result = await createQuickJSRuntime({ timeoutMs: 5_000 }).execute({
+      invoker: fakeInvoker([]),
+      toolsPrelude: renderToolsPrelude(),
+      code: `throw new Error("[tack:tool_timeout] user error");`
+    });
+
+    expect(result).toMatchObject({
+      ok: false,
+      error: { phase: "runtime", code: "internal_error", message: "[tack:tool_timeout] user error" }
+    });
+  });
+
+  it("does not trust a user-thrown dispatch-shaped error", async () => {
+    const result = await createQuickJSRuntime({ timeoutMs: 5_000 }).execute({
+      invoker: fakeInvoker([]),
+      toolsPrelude: renderToolsPrelude(),
+      code: `const error = new Error("user error"); error.code = "tool_timeout"; throw error;`
+    });
+
+    expect(result).toMatchObject({
+      ok: false,
+      error: { phase: "runtime", code: "internal_error", message: "user error" }
+    });
+  });
+
+  it("does not invoke properties on a user-thrown error while classifying it", async () => {
+    const result = await createQuickJSRuntime({ timeoutMs: 5_000 }).execute({
+      invoker: fakeInvoker([]),
+      toolsPrelude: renderToolsPrelude(),
+      code: `
+const error = { code: "tool_timeout" };
+Object.defineProperty(error, "_" + "_tackDispatchToken", { get() { throw new Error("token getter ran"); } });
+throw error;
+`
+    });
+
+    expect(result).toMatchObject({
+      ok: false,
+      error: { phase: "runtime", code: "internal_error" }
     });
   });
 

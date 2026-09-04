@@ -7,6 +7,7 @@ import { buildManifest, type TackConfig, type TackRuntime } from "@cbxss/tack-co
 
 import { createRuntime, defineTool, discoverManifest, isTackTool } from "../src/index.js";
 import { discoverModuleSource } from "../src/module/discover.js";
+import { waitForAbortHandlerStart } from "./fixtures/calc.js";
 
 const CALC_ENTRY = fileURLToPath(new URL("./fixtures/calc.ts", import.meta.url));
 const EMPTY_ENTRY = fileURLToPath(new URL("./fixtures/empty.ts", import.meta.url));
@@ -73,7 +74,7 @@ describe("discoverModuleSource", () => {
 
     expect(server.serverId).toBe("calc");
     const byName = new Map(server.tools.map((tool) => [tool.name, tool]));
-    expect([...byName.keys()].sort()).toEqual(["add", "boom", "noop", "shout_message"]);
+    expect([...byName.keys()].sort()).toEqual(["add", "boom", "noop", "reject_on_abort", "shout_message", "wait_for_abort"]);
 
     const add = byName.get("add");
     expect(add?.description).toBe("Add two numbers");
@@ -154,6 +155,37 @@ describe("discoverManifest + createRuntime", () => {
     }
   });
 
+  it("forwards cancellation to a local module handler", async () => {
+    const runtime = await calcRuntime();
+    const controller = new AbortController();
+    try {
+      const started = waitForAbortHandlerStart();
+      const pending = runtime.invoke("calc.wait_for_abort", {}, { signal: controller.signal });
+      await started;
+      controller.abort(new Error("cancelled for test"));
+      await expect(pending).resolves.toMatchObject({
+        isError: false,
+        structuredContent: { aborted: true }
+      });
+
+      const rejectingController = new AbortController();
+      const rejectingStarted = waitForAbortHandlerStart();
+      const rejecting = runtime.invoke("calc.reject_on_abort", {}, { signal: rejectingController.signal });
+      await rejectingStarted;
+      const rejectingReason = new Error("handler cancelled");
+      rejectingController.abort(rejectingReason);
+      await expect(rejecting).rejects.toBe(rejectingReason);
+
+      const alreadyAborted = new AbortController();
+      const reason = new Error("already cancelled");
+      alreadyAborted.abort(reason);
+      await expect(runtime.invoke("calc.wait_for_abort", {}, { signal: alreadyAborted.signal }))
+        .rejects.toBe(reason);
+    } finally {
+      await runtime.close();
+    }
+  });
+
   it("surfaces invalid args as an error result via Zod validation", async () => {
     const runtime = await calcRuntime();
     try {
@@ -171,6 +203,13 @@ describe("discoverManifest + createRuntime", () => {
     } finally {
       await runtime.close();
     }
+  });
+
+  it("does not route calls after the aggregate runtime is closed", async () => {
+    const runtime = await calcRuntime();
+    await runtime.close();
+    await expect(runtime.invoke("calc.add", { a: 1, b: 2 })).rejects.toThrow("Tack runtime is closed");
+    await expect(runtime.close()).resolves.toBeUndefined();
   });
 
   it("routes each tool to the runtime that owns its transport", async () => {

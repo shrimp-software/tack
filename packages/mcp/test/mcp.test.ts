@@ -1,4 +1,4 @@
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -13,6 +13,7 @@ const here = dirname(fileURLToPath(import.meta.url));
 const fakeServer = join(here, "fixtures", "fake-mcp-server.mjs");
 const envServer = join(here, "fixtures", "env-mcp-server.mjs");
 const flakyServer = join(here, "fixtures", "flaky-mcp-server.mjs");
+const abortableServer = join(here, "fixtures", "abortable-mcp-server.mjs");
 
 describe("MCP adapter", () => {
   it("discovers and invokes Streamable HTTP tools from an MCP URL", async () => {
@@ -108,6 +109,65 @@ describe("MCP adapter", () => {
     }
   });
 
+  it("shares one legacy initialization across concurrent first calls", async () => {
+    const server = await startLegacyHttpMcpServer();
+    const client = new StreamableHttpMcpClient({ transport: "http", url: server.url });
+    try {
+      await expect(Promise.all([
+        client.callTool({ name: "echo", arguments: { message: "one" } }),
+        client.callTool({ name: "echo", arguments: { message: "two" } })
+      ])).resolves.toHaveLength(2);
+      expect(server.requests.filter((request) => request === "initialize")).toHaveLength(1);
+      expect(server.requests.filter((request) => request === "notifications/initialized")).toHaveLength(1);
+      expect(server.requests.filter((request) => request === "tools/call")).toHaveLength(2);
+    } finally {
+      await client.close();
+      await server.close();
+    }
+  });
+
+  it("closes a legacy HTTP session once and does not allow reuse", async () => {
+    const server = await startLegacyHttpMcpServer();
+    const client = new StreamableHttpMcpClient({ transport: "http", url: server.url });
+    try {
+      await client.callTool({ name: "echo", arguments: { message: "one" } });
+      await client.close();
+      await client.close();
+      expect(server.requests.filter((request) => request === "DELETE")).toHaveLength(1);
+      await expect(client.callTool({ name: "echo", arguments: { message: "two" } }))
+        .rejects.toThrow("MCP HTTP client is closed");
+    } finally {
+      await client.close();
+      await server.close();
+    }
+  });
+
+  it("waits for an in-flight legacy initialization before closing its session", async () => {
+    let releaseInitialize: (() => void) | undefined;
+    let markInitializeStarted: (() => void) | undefined;
+    const initializeStarted = new Promise<void>((resolve) => { markInitializeStarted = resolve; });
+    const initializeGate = new Promise<void>((resolve) => { releaseInitialize = resolve; });
+    const server = await startLegacyHttpMcpServer({
+      beforeInitialize: async () => {
+        markInitializeStarted?.();
+        await initializeGate;
+      }
+    });
+    const client = new StreamableHttpMcpClient({ transport: "http", url: server.url });
+    try {
+      const connecting = client.connect();
+      await initializeStarted;
+      const closing = client.close();
+      releaseInitialize?.();
+      await Promise.all([connecting, closing]);
+      expect(server.requests.filter((request) => request === "DELETE")).toHaveLength(1);
+    } finally {
+      releaseInitialize?.();
+      await client.close();
+      await server.close();
+    }
+  });
+
   it("rejects Streamable HTTP JSON-RPC responses with mismatched ids", async () => {
     const server = await startMismatchedIdHttpMcpServer();
     const config: TackConfig = {
@@ -130,6 +190,39 @@ describe("MCP adapter", () => {
       expect((error as { readonly cause?: Error }).cause?.message)
         .toBe("MCP HTTP response did not include response id 1");
     } finally {
+      await server.close();
+    }
+  });
+
+  it("rejects a Streamable HTTP tools/list cursor cycle", async () => {
+    const server = await startRepeatedCursorHttpMcpServer();
+    const client = new StreamableHttpMcpClient({ transport: "http", url: server.url });
+    try {
+      await expect(client.listTools()).rejects.toThrow('MCP tools/list repeated cursor "again"');
+    } finally {
+      await client.close();
+      await server.close();
+    }
+  });
+
+  it("rejects a non-string Streamable HTTP tools/list cursor", async () => {
+    const server = await startRepeatedCursorHttpMcpServer(123);
+    const client = new StreamableHttpMcpClient({ transport: "http", url: server.url });
+    try {
+      await expect(client.listTools()).rejects.toThrow("MCP tools/list returned a non-string nextCursor");
+    } finally {
+      await client.close();
+      await server.close();
+    }
+  });
+
+  it("rejects an empty Streamable HTTP tools/list cursor", async () => {
+    const server = await startRepeatedCursorHttpMcpServer("");
+    const client = new StreamableHttpMcpClient({ transport: "http", url: server.url });
+    try {
+      await expect(client.listTools()).rejects.toThrow("MCP tools/list returned an empty nextCursor");
+    } finally {
+      await client.close();
       await server.close();
     }
   });
@@ -483,6 +576,98 @@ describe("MCP adapter", () => {
     } finally {
       await runtime.close();
       await server.close();
+    }
+  });
+
+  it("cancels concurrent stdio calls by replacing their shared process connection", async () => {
+    const root = await mkdtemp(join(tmpdir(), "tack-abortable-mcp-"));
+    const statePath = join(root, "pids.txt");
+    const config: TackConfig = {
+      servers: {
+        abortable: {
+          transport: "stdio",
+          command: process.execPath,
+          args: [abortableServer],
+          env: { TACK_ABORTABLE_STATE: statePath }
+        }
+      }
+    };
+    const manifest = await discoverMcpManifestPromise(config);
+    const runtime = await createMcpRuntime({ config, manifest });
+    const controller = new AbortController();
+    try {
+      const pending = runtime.invoke("abortable.echo", { message: "hang" }, { signal: controller.signal });
+      const concurrent = runtime.invoke("abortable.echo", { message: "hang" });
+      await waitForStateLines(statePath, "call:hang", 2);
+      controller.abort(new Error("cancelled for test"));
+      const fresh = runtime.invoke("abortable.echo", { message: "fresh" });
+      await expect(pending).rejects.toThrow();
+      await expect(concurrent).rejects.toThrow();
+      await expect(fresh).resolves.toMatchObject({ isError: false });
+      const pids = (await readFile(statePath, "utf8"))
+        .split("\n")
+        .filter((line) => line.startsWith("pid:"));
+      // Discovery, the cancelled runtime connection, then the replacement.
+      expect(pids).toHaveLength(3);
+      expect(pids[1]).not.toBe(pids[2]);
+    } finally {
+      await runtime.close();
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("does not dispatch a stdio call after its signal was already aborted", async () => {
+    const root = await mkdtemp(join(tmpdir(), "tack-preaborted-mcp-"));
+    const statePath = join(root, "state.txt");
+    const config: TackConfig = {
+      servers: {
+        abortable: {
+          transport: "stdio",
+          command: process.execPath,
+          args: [abortableServer],
+          env: { TACK_ABORTABLE_STATE: statePath }
+        }
+      }
+    };
+    const manifest = await discoverMcpManifestPromise(config);
+    const runtime = await createMcpRuntime({ config, manifest });
+    const controller = new AbortController();
+    controller.abort(new Error("already cancelled"));
+    try {
+      await expect(runtime.invoke("abortable.echo", { message: "hang" }, { signal: controller.signal })).rejects.toThrow("already cancelled");
+      const state = await readFile(statePath, "utf8");
+      expect(state).not.toContain("call:hang");
+      expect(state.split("\n").filter((line) => line.startsWith("pid:"))).toHaveLength(1);
+    } finally {
+      await runtime.close();
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("does not reopen a connection after the runtime is closed", async () => {
+    const root = await mkdtemp(join(tmpdir(), "tack-closed-mcp-"));
+    const statePath = join(root, "state.txt");
+    const config: TackConfig = {
+      servers: {
+        abortable: {
+          transport: "stdio",
+          command: process.execPath,
+          args: [abortableServer],
+          env: { TACK_ABORTABLE_STATE: statePath }
+        }
+      }
+    };
+    const manifest = await discoverMcpManifestPromise(config);
+    const runtime = await createMcpRuntime({ config, manifest });
+    try {
+      await expect(runtime.invoke("abortable.echo", { message: "fresh" })).resolves.toMatchObject({ isError: false });
+      await runtime.close();
+      await expect(runtime.invoke("abortable.echo", { message: "fresh" })).rejects.toThrow("MCP runtime is closed");
+      expect((await readFile(statePath, "utf8")).split("\n").filter((line) => line.startsWith("pid:")))
+        .toHaveLength(2);
+    } finally {
+      await runtime.close();
+      await rm(root, { recursive: true, force: true });
     }
   });
 
@@ -905,6 +1090,18 @@ describe("MCP adapter", () => {
   });
 });
 
+async function waitForStateLines(path: string, line: string, expectedCount: number): Promise<void> {
+  const deadline = Date.now() + 5_000;
+  while (Date.now() < deadline) {
+    const state = await readFile(path, "utf8").catch(() => "");
+    if (state.split("\n").filter((entry) => entry === line).length >= expectedCount) {
+      return;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+  throw new Error(`Timed out waiting for ${expectedCount} ${line} entries`);
+}
+
 function restoreEnv(name: string, value: string | undefined): void {
   if (value === undefined) {
     delete process.env[name];
@@ -996,7 +1193,45 @@ async function startMismatchedIdHttpMcpServer(): Promise<{
   };
 }
 
-async function startLegacyHttpMcpServer(): Promise<{
+async function startRepeatedCursorHttpMcpServer(nextCursor: unknown = "again"): Promise<{
+  readonly url: string;
+  readonly close: () => Promise<void>;
+}> {
+  const server = createServer((request, response) => {
+    void (async () => {
+      const message = await readJson(request);
+      if (message.method === "initialize") {
+        writeJson(response, 400, { jsonrpc: "2.0", id: message.id, error: { code: -32600, message: "stateless" } });
+        return;
+      }
+      writeJson(response, 200, {
+        jsonrpc: "2.0",
+        id: message.id,
+        result: { tools: [], nextCursor }
+      });
+    })();
+  });
+  await new Promise<void>((resolve, reject) => {
+    server.once("error", reject);
+    server.listen(0, "127.0.0.1", () => {
+      server.off("error", reject);
+      resolve();
+    });
+  });
+  const address = server.address();
+  if (typeof address !== "object" || !address) throw new Error("cursor server did not bind a port");
+  return {
+    url: `http://127.0.0.1:${address.port}/mcp`,
+    close: () => new Promise((resolve) => {
+      server.closeAllConnections();
+      server.close(() => resolve());
+    })
+  };
+}
+
+async function startLegacyHttpMcpServer(options: {
+  readonly beforeInitialize?: (() => Promise<void>) | undefined;
+} = {}): Promise<{
   readonly url: string;
   readonly requests: string[];
   readonly close: () => Promise<void>;
@@ -1031,6 +1266,7 @@ async function startLegacyHttpMcpServer(): Promise<{
 
       const message = await readJson(request);
       if (message.method === "initialize") {
+        await options.beforeInitialize?.();
         if (request.headers["mcp-protocol-version"] !== undefined ||
             message.params?.protocolVersion !== "2025-11-25") {
           writeJson(response, 400, { jsonrpc: "2.0", id: message.id, error: { code: -32600, message: "bad initialize" } });

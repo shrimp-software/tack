@@ -10,12 +10,16 @@ import type { McpClient } from "./client.js";
 const MCP_PROTOCOL_VERSION = "2026-07-28";
 const LEGACY_MCP_PROTOCOL_VERSION = "2025-11-25";
 const CLIENT_INFO = { name: "tack", version: "1.0.1" } as const;
+const MAX_TOOL_LIST_PAGES = 1_000;
 
 type HttpServerConfig = Extract<TackServerConfig, { readonly transport: "http" }>;
 
 export class StreamableHttpMcpClient implements McpClient {
   private nextId = 1;
   private mode: "unknown" | "stateless" | "stateful" = "unknown";
+  private connectPromise: Promise<void> | undefined;
+  private closed = false;
+  private closePromise: Promise<void> | undefined;
   private sessionId: string | undefined;
   private protocolVersion = LEGACY_MCP_PROTOCOL_VERSION;
   private readonly config: HttpServerConfig;
@@ -30,8 +34,14 @@ export class StreamableHttpMcpClient implements McpClient {
    * the unambiguous signal that the downstream is stateful.
    */
   async connect(): Promise<void> {
+    this.throwIfClosed();
     if (this.mode !== "unknown") return;
 
+    this.connectPromise ??= this.initialize();
+    await this.connectPromise;
+  }
+
+  private async initialize(): Promise<void> {
     const initialId = this.nextId;
     try {
       const initialized = await this.legacyRequest("initialize", {
@@ -55,13 +65,32 @@ export class StreamableHttpMcpClient implements McpClient {
     await this.connect();
     const tools: unknown[] = [];
     let cursor: string | undefined;
+    const seenCursors = new Set<string>();
+    let pages = 0;
 
     do {
+      if (pages >= MAX_TOOL_LIST_PAGES) {
+        throw new Error(`MCP tools/list exceeded ${MAX_TOOL_LIST_PAGES} pages`);
+      }
+      pages += 1;
       const result = await this.request("tools/list", cursor ? { cursor } : {});
       const page = asRecord(result);
       const pageTools = page && Array.isArray(page["tools"]) ? page["tools"] : [];
       tools.push(...pageTools);
-      cursor = typeof page?.["nextCursor"] === "string" ? page["nextCursor"] : undefined;
+      const nextCursor = page?.["nextCursor"];
+      if (nextCursor !== undefined && typeof nextCursor !== "string") {
+        throw new Error("MCP tools/list returned a non-string nextCursor");
+      }
+      if (nextCursor === "") {
+        throw new Error("MCP tools/list returned an empty nextCursor");
+      }
+      cursor = nextCursor;
+      if (cursor) {
+        if (seenCursors.has(cursor)) {
+          throw new Error(`MCP tools/list repeated cursor ${JSON.stringify(cursor)}`);
+        }
+        seenCursors.add(cursor);
+      }
     } while (cursor);
 
     return { tools };
@@ -83,12 +112,18 @@ export class StreamableHttpMcpClient implements McpClient {
   }
 
   async close(): Promise<void> {
-    if (this.mode !== "stateful" || !this.sessionId) return;
+    if (this.closePromise) return this.closePromise;
+    this.closed = true;
+    this.closePromise = (async () => {
+      await this.connectPromise?.catch(() => undefined);
+      if (this.mode !== "stateful" || !this.sessionId) return;
 
-    await fetch(this.config.url, {
-      method: "DELETE",
-      headers: this.legacyHeaders({ accept: "application/json" })
-    }).catch(() => undefined);
+      await fetch(this.config.url, {
+        method: "DELETE",
+        headers: this.legacyHeaders({ accept: "application/json" })
+      }).catch(() => undefined);
+    })();
+    return this.closePromise;
   }
 
   private async request(
@@ -96,6 +131,7 @@ export class StreamableHttpMcpClient implements McpClient {
     params: Record<string, unknown>,
     options: { readonly toolName?: string | undefined; readonly signal?: AbortSignal | undefined } = {}
   ): Promise<unknown> {
+    this.throwIfClosed();
     await this.connect();
     return this.mode === "stateful"
       ? this.legacyRequest(method, params, { ...(options.signal ? { signal: options.signal } : {}) })
@@ -201,6 +237,12 @@ export class StreamableHttpMcpClient implements McpClient {
       headers.set("mcp-protocol-version", this.protocolVersion);
     }
     return headers;
+  }
+
+  private throwIfClosed(): void {
+    if (this.closed) {
+      throw new Error("MCP HTTP client is closed");
+    }
   }
 }
 

@@ -24,59 +24,121 @@ export interface McpClient {
 }
 
 export interface McpConnection {
+  readonly transport: "http" | "stdio";
   readonly client: McpClient;
+}
+
+export interface McpConnectionLease {
+  readonly connection: McpConnection;
+  readonly generation: symbol;
 }
 
 export type McpServerConfigEntry =
   | { readonly ok: true; readonly config: McpServerConfig }
   | { readonly ok: false; readonly error: TackRuntimeError };
 
-export async function getConnection(
-  connections: Map<string, Promise<McpConnection>>,
-  serverId: string,
-  serverConfigs: ReadonlyMap<string, McpServerConfigEntry>
-): Promise<McpConnection> {
-  const existing = connections.get(serverId);
-  if (existing) {
-    return existing;
-  }
-
-  const serverConfig = serverConfigs.get(serverId);
-  if (!serverConfig) {
-    throw new TackRuntimeError({
-      message: `No config found for server ${serverId}`,
-      serverId
-    });
-  }
-  if (!serverConfig.ok) {
-    throw serverConfig.error;
-  }
-
-  const pending = openConnection(serverConfig.config).catch((cause) => {
-    if (connections.get(serverId) === pending) connections.delete(serverId);
-    throw new TackRuntimeError({
-      message: `Failed to connect to MCP server ${serverId}`,
-      serverId,
-      cause
-    });
-  });
-  connections.set(serverId, pending);
-  return pending;
+interface ConnectionSlot {
+  readonly generation: symbol;
+  readonly promise: Promise<McpConnection>;
+  closePromise?: Promise<void> | undefined;
 }
 
-export async function closeConnections(
-  connections: Map<string, Promise<McpConnection>>
-): Promise<void> {
-  const settled = await Promise.allSettled(connections.values());
-  connections.clear();
+/** Owns lazy connections and atomically retires a cancelled stdio generation. */
+export class McpConnectionPool {
+  private readonly slots = new Map<string, ConnectionSlot>();
+  private readonly slotsByGeneration = new Map<symbol, ConnectionSlot>();
+  private closed = false;
+  private closePromise: Promise<void> | undefined;
 
-  await Promise.all(
-    settled.map(async (entry) => {
-      if (entry.status === "fulfilled") {
-        await entry.value.client.close();
+  async acquire(
+    serverId: string,
+    serverConfigs: ReadonlyMap<string, McpServerConfigEntry>
+  ): Promise<McpConnectionLease> {
+    this.throwIfClosed();
+    const slot = this.slots.get(serverId) ?? this.open(serverId, serverConfigs);
+    const connection = await slot.promise;
+    if (this.closed) {
+      await this.closeSlot(slot).catch(() => undefined);
+      this.throwIfClosed();
+    }
+    return { connection, generation: slot.generation };
+  }
+
+  /** Stdio has no request-level cancellation, so retire before closing it. */
+  async invalidate(serverId: string, lease: McpConnectionLease): Promise<void> {
+    const slot = this.slotsByGeneration.get(lease.generation);
+    if (!slot) {
+      return;
+    }
+    if (this.slots.get(serverId) === slot) {
+      this.slots.delete(serverId);
+    }
+    await this.retire(slot);
+  }
+
+  async close(): Promise<void> {
+    if (this.closePromise) {
+      return this.closePromise;
+    }
+    this.closed = true;
+    const slots = [...this.slotsByGeneration.values()];
+    this.slots.clear();
+    this.closePromise = Promise.all(slots.map((slot) => this.retire(slot))).then(() => undefined);
+    return this.closePromise;
+  }
+
+  private open(
+    serverId: string,
+    serverConfigs: ReadonlyMap<string, McpServerConfigEntry>
+  ): ConnectionSlot {
+    const serverConfig = serverConfigs.get(serverId);
+    if (!serverConfig) {
+      throw new TackRuntimeError({
+        message: `No config found for server ${serverId}`,
+        serverId
+      });
+    }
+    if (!serverConfig.ok) {
+      throw serverConfig.error;
+    }
+
+    const generation = Symbol(serverId);
+    let slot: ConnectionSlot;
+    const promise = openConnection(serverConfig.config).catch((cause) => {
+      if (this.slots.get(serverId) === slot) {
+        this.slots.delete(serverId);
       }
-    })
-  );
+      this.slotsByGeneration.delete(generation);
+      throw new TackRuntimeError({
+        message: `Failed to connect to MCP server ${serverId}`,
+        serverId,
+        cause
+      });
+    });
+    slot = { generation, promise };
+    this.slots.set(serverId, slot);
+    this.slotsByGeneration.set(generation, slot);
+    return slot;
+  }
+
+  private async retire(slot: ConnectionSlot): Promise<void> {
+    try {
+      await this.closeSlot(slot);
+    } finally {
+      this.slotsByGeneration.delete(slot.generation);
+    }
+  }
+
+  private closeSlot(slot: ConnectionSlot): Promise<void> {
+    slot.closePromise ??= slot.promise.then((connection) => connection.client.close());
+    return slot.closePromise;
+  }
+
+  private throwIfClosed(): void {
+    if (this.closed) {
+      throw new TackRuntimeError({ message: "MCP runtime is closed" });
+    }
+  }
 }
 
 export async function openConnection(serverConfig: TackConfig["servers"][string]): Promise<McpConnection> {
@@ -85,7 +147,7 @@ export async function openConnection(serverConfig: TackConfig["servers"][string]
   if (normalized.transport === "http") {
     const client = new StreamableHttpMcpClient(normalized);
     await client.connect();
-    return { client };
+    return { transport: "http", client };
   }
 
   return openStdioConnection(normalized);
@@ -151,6 +213,7 @@ async function openStdioConnection(
 
   await client.connect(transport);
   return {
+    transport: "stdio",
     client: {
       listTools: () => client.listTools(),
       callTool: (input) => client.callTool(input),

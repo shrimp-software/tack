@@ -5,49 +5,42 @@ import {
   type CodeSession,
   type CodeSessionOptions,
   type DerefResult,
-  type ExecuteErrorPhase,
   type ExecutionResult,
   type NormalizedCodeRuntimeExecuteInput,
   type ToolInvoker,
+  isToolDispatchError,
   errorMessage,
   isAbortError,
   normalizeCodeRuntimeExecuteInput,
   renderCodeModeUserFunctionSource,
   throwIfAborted,
   validateCodeModeUserCode,
-  withActiveTimeout
+  withActiveTimeout,
+  type ToolDispatchCode
 } from "@cbxss/tack-codemode";
-import { ownField } from "@cbxss/tack-core";
 import { transform } from "esbuild";
 import {
   newAsyncContext,
   type QuickJSAsyncContext,
   type QuickJSHandle
 } from "quickjs-emscripten";
+import { randomUUID } from "node:crypto";
 
 import { rewriteCellScope } from "./scope-rewrite.js";
+import {
+  executionErrorCode,
+  executionErrorPhase,
+  publicExecutionErrorMessage
+} from "./error-result.js";
+import { normalizeRuntimeOptions, type QuickJSLimits, type QuickJSRuntimeOptions } from "./options.js";
+import {
+  disposeHandle,
+  drainPendingJobs,
+  snapshotQuickJSValue,
+  toQuickJSJsonValue
+} from "./value-bridge.js";
 
-export interface QuickJSRuntimeOptions {
-  readonly timeoutMs?: number;
-  readonly toolTimeoutMs?: number;
-  readonly memoryMb?: number;
-  readonly maxStackBytes?: number;
-  readonly maxOutputBytes?: number;
-  readonly maxToolCalls?: number;
-  readonly maxToolRequestBytes?: number;
-  readonly maxToolResponseBytes?: number;
-  /** In a session, a returned/emitted value larger than this is retained as a ref. */
-  readonly maxInlineResultBytes?: number;
-}
-
-const DEFAULT_TIMEOUT_MS = 30_000;
-const DEFAULT_MEMORY_MB = 128;
-const DEFAULT_MAX_STACK_BYTES = 1_000_000;
-const DEFAULT_MAX_OUTPUT_BYTES = 1_000_000;
-const DEFAULT_MAX_TOOL_CALLS = 100;
-const DEFAULT_MAX_TOOL_REQUEST_BYTES = 1_000_000;
-const DEFAULT_MAX_TOOL_RESPONSE_BYTES = 1_000_000;
-const DEFAULT_MAX_INLINE_RESULT_BYTES = 4_096;
+export type { QuickJSRuntimeOptions } from "./options.js";
 const REF_PREVIEW_LIMIT = 10;
 const DEREF_DEFAULT_LIMIT = 100;
 
@@ -83,18 +76,6 @@ interface ExecuteInQuickJSInput {
   readonly signal: AbortSignal;
 }
 
-interface QuickJSLimits {
-  readonly timeoutMs: number;
-  readonly toolTimeoutMs: number;
-  readonly memoryMb: number;
-  readonly maxStackBytes: number;
-  readonly maxOutputBytes: number;
-  readonly maxToolCalls: number;
-  readonly maxToolRequestBytes: number;
-  readonly maxToolResponseBytes: number;
-  readonly maxInlineResultBytes: number;
-}
-
 interface RuntimeState {
   readonly context: QuickJSAsyncContext;
   readonly invoker: ToolInvoker;
@@ -104,34 +85,14 @@ interface RuntimeState {
   readonly maxToolRequestBytes: number;
   readonly maxToolResponseBytes: number;
   readonly signal: AbortSignal;
+  /** Private per-execution capability for a host-originated dispatch error. */
+  readonly dispatchToken: string;
   closed: boolean;
   toolCalls: number;
   toolCallsInFlight: number;
 }
 
-function normalizeRuntimeOptions(options: QuickJSRuntimeOptions): QuickJSLimits {
-  return {
-    timeoutMs: readOwnNumber(options, "timeoutMs") ?? DEFAULT_TIMEOUT_MS,
-    toolTimeoutMs: readOwnNumber(options, "toolTimeoutMs") ?? (readOwnNumber(options, "timeoutMs") ?? DEFAULT_TIMEOUT_MS),
-    memoryMb: readOwnNumber(options, "memoryMb") ?? DEFAULT_MEMORY_MB,
-    maxStackBytes: readOwnNumber(options, "maxStackBytes") ?? DEFAULT_MAX_STACK_BYTES,
-    maxOutputBytes: readOwnNumber(options, "maxOutputBytes") ?? DEFAULT_MAX_OUTPUT_BYTES,
-    maxToolCalls: readOwnNumber(options, "maxToolCalls") ?? DEFAULT_MAX_TOOL_CALLS,
-    maxToolRequestBytes: readOwnNumber(options, "maxToolRequestBytes") ?? DEFAULT_MAX_TOOL_REQUEST_BYTES,
-    maxToolResponseBytes: readOwnNumber(options, "maxToolResponseBytes") ?? DEFAULT_MAX_TOOL_RESPONSE_BYTES,
-    maxInlineResultBytes: readOwnNumber(options, "maxInlineResultBytes") ?? DEFAULT_MAX_INLINE_RESULT_BYTES
-  };
-}
-
 const normalizeExecuteInput = normalizeCodeRuntimeExecuteInput;
-
-function readOwnNumber(
-  options: QuickJSRuntimeOptions,
-  key: keyof QuickJSRuntimeOptions
-): number | undefined {
-  const value = ownField(options, key);
-  return typeof value === "number" ? value : undefined;
-}
 
 async function executeInQuickJS(input: ExecuteInQuickJSInput): Promise<ExecutionResult> {
   const limits = {
@@ -160,6 +121,7 @@ async function executeInQuickJS(input: ExecuteInQuickJSInput): Promise<Execution
       maxToolRequestBytes: limits.maxToolRequestBytes,
       maxToolResponseBytes: limits.maxToolResponseBytes,
       signal: input.signal,
+      dispatchToken: randomUUID(),
       closed: false,
       toolCalls: 0,
       toolCallsInFlight: 0
@@ -209,9 +171,9 @@ async function executeInQuickJS(input: ExecuteInQuickJSInput): Promise<Execution
         emitted,
         logs,
         error: {
-          phase: errorPhase(error, deadlineExceeded),
-          code: errorCode(error, deadlineExceeded),
-          message: publicErrorMessage(error)
+          phase: executionErrorPhase(error, deadlineExceeded),
+          code: executionErrorCode(error, deadlineExceeded, state?.dispatchToken),
+          message: publicExecutionErrorMessage(error)
         }
       },
       maxOutputBytes: limits.maxOutputBytes,
@@ -504,6 +466,7 @@ async function createQuickJSSession(
       maxToolRequestBytes: limits.maxToolRequestBytes,
       maxToolResponseBytes: limits.maxToolResponseBytes,
       signal,
+      dispatchToken: randomUUID(),
       closed: false,
       toolCalls: 0,
       toolCallsInFlight: 0
@@ -553,9 +516,9 @@ async function createQuickJSSession(
           emitted,
           logs,
           error: {
-            phase: errorPhase(error, cellDeadlineExceeded),
-            code: errorCode(error, cellDeadlineExceeded),
-            message: publicErrorMessage(error)
+            phase: executionErrorPhase(error, cellDeadlineExceeded),
+            code: executionErrorCode(error, cellDeadlineExceeded, state.dispatchToken),
+            message: publicExecutionErrorMessage(error)
           }
         },
         maxOutputBytes: limits.maxOutputBytes,
@@ -751,23 +714,26 @@ function rejectDeferred(
   state: RuntimeState,
   deferred: ReturnType<QuickJSAsyncContext["newPromise"]>,
   message: string,
-  code?: "downstream_error" | "tool_timeout" | "cancelled"
+  code?: ToolDispatchCode
 ): void {
-  const errorHandle = state.context.newError(code ? `[tack:${code}] ${message}` : message);
+  const errorHandle = state.context.newError(message);
+  const codeHandle = code ? state.context.newString(code) : undefined;
+  const tokenHandle = code ? state.context.newString(state.dispatchToken) : undefined;
   try {
+    if (codeHandle) {
+      state.context.setProp(errorHandle, "code", codeHandle);
+      state.context.setProp(errorHandle, "__tackDispatchToken", tokenHandle!);
+    }
     deferred.reject(errorHandle);
   } finally {
+    disposeHandle(tokenHandle);
+    disposeHandle(codeHandle);
     disposeHandle(errorHandle);
   }
 }
 
-function toolDispatchCode(error: unknown): "downstream_error" | "tool_timeout" | "cancelled" {
-  const code = typeof error === "object" && error !== null
-    ? (error as { readonly code?: unknown }).code
-    : undefined;
-  return code === "tool_timeout" || code === "cancelled"
-    ? code
-    : "downstream_error";
+function toolDispatchCode(error: unknown): ToolDispatchCode {
+  return isToolDispatchError(error) ? error.code : "downstream_error";
 }
 
 function createConsoleHandle(state: RuntimeState): QuickJSHandle {
@@ -782,18 +748,6 @@ function createConsoleHandle(state: RuntimeState): QuickJSHandle {
     methodHandle.dispose();
   }
   return consoleHandle;
-}
-
-function drainPendingJobs(context: QuickJSAsyncContext): void {
-  while (context.runtime.hasPendingJob()) {
-    context.runtime.executePendingJobs().dispose();
-  }
-}
-
-function disposeHandle(handle: QuickJSHandle | undefined): void {
-  if (handle?.alive) {
-    handle.dispose();
-  }
 }
 
 async function transpileUserCode(input: {
@@ -817,93 +771,6 @@ async function transpileUserCode(input: {
   } catch (error) {
     throw error instanceof CodeModeParseError ? error : new CodeModeParseError(errorMessage(error));
   }
-}
-
-function snapshotQuickJSValue(context: QuickJSAsyncContext, handle: QuickJSHandle): unknown {
-  return snapshotJsonData(context.dump(handle));
-}
-
-function snapshotJsonData(value: unknown, seen = new WeakSet<object>()): unknown {
-  if (value === null || typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
-    return value;
-  }
-  if (value === undefined) {
-    return undefined;
-  }
-  if (typeof value === "bigint") {
-    throw new Error("BigInt values are not supported in Tack code-mode JSON data");
-  }
-  if (typeof value !== "object") {
-    return String(value);
-  }
-  if (seen.has(value)) {
-    throw new Error("Cyclic JSON data is not supported in Tack code-mode");
-  }
-
-  seen.add(value);
-  try {
-    if (Array.isArray(value)) {
-      return value.map((item) => {
-        const snapshot = snapshotJsonData(item, seen);
-        return snapshot === undefined ? null : snapshot;
-      });
-    }
-
-    const output: Record<string, unknown> = Object.create(null);
-    for (const [key, descriptor] of Object.entries(Object.getOwnPropertyDescriptors(value))) {
-      if (!descriptor.enumerable || !("value" in descriptor)) {
-        continue;
-      }
-
-      const snapshot = snapshotJsonData(descriptor.value, seen);
-      if (snapshot !== undefined) {
-        output[key] = snapshot;
-      }
-    }
-    return output;
-  } finally {
-    seen.delete(value);
-  }
-}
-
-function toQuickJSJsonValue(context: QuickJSAsyncContext, value: unknown): QuickJSHandle {
-  const snapshot = snapshotJsonData(value);
-  if (snapshot === undefined) {
-    return context.undefined;
-  }
-  if (snapshot === null) {
-    return context.null;
-  }
-  if (typeof snapshot === "string") {
-    return context.newString(snapshot);
-  }
-  if (typeof snapshot === "number") {
-    return context.newNumber(snapshot);
-  }
-  if (typeof snapshot === "boolean") {
-    return snapshot ? context.true : context.false;
-  }
-  if (Array.isArray(snapshot)) {
-    const arrayHandle = context.newArray();
-    for (let index = 0; index < snapshot.length; index += 1) {
-      const itemHandle = toQuickJSJsonValue(context, snapshot[index]);
-      context.setProp(arrayHandle, index, itemHandle);
-      disposeHandle(itemHandle);
-    }
-    return arrayHandle;
-  }
-
-  const objectHandle = context.newObject();
-  for (const [key, item] of Object.entries(snapshot as Record<string, unknown>)) {
-    const itemHandle = toQuickJSJsonValue(context, item);
-    context.defineProp(objectHandle, key, {
-      value: itemHandle,
-      enumerable: true,
-      configurable: true
-    });
-    disposeHandle(itemHandle);
-  }
-  return objectHandle;
 }
 
 function jsonExecutionResult(input: {
@@ -959,29 +826,4 @@ function formatLogArg(value: unknown): string {
   } catch {
     return String(value);
   }
-}
-
-function errorPhase(error: unknown, deadlineExceeded: boolean): ExecuteErrorPhase {
-  if (error instanceof CodeRuntimeTimeoutError || deadlineExceeded) {
-    return "timeout";
-  }
-  return error instanceof CodeModeParseError ? "parse" : "runtime";
-}
-
-function errorCode(error: unknown, deadlineExceeded: boolean): import("@cbxss/tack-codemode").ExecuteErrorCode {
-  if (error instanceof CodeRuntimeTimeoutError || deadlineExceeded) return "execution_timeout";
-  if (error instanceof CodeModeParseError) return "parse_error";
-  if (errorMessage(error).startsWith("[tack:downstream_error] ")) return "downstream_error";
-  if (errorMessage(error).startsWith("[tack:tool_timeout] ")) return "tool_timeout";
-  if (typeof error === "object" && error !== null && "code" in error) {
-    const code = (error as { readonly code?: unknown }).code;
-    if (code === "downstream_error" || code === "tool_timeout" || code === "cancelled" || code === "internal_error") {
-      return code;
-    }
-  }
-  return "internal_error";
-}
-
-function publicErrorMessage(error: unknown): string {
-  return errorMessage(error).replace(/^\[tack:[a-z_]+\] /u, "");
 }

@@ -1,10 +1,12 @@
 import {
   createTackResult,
+  formatTackError,
   ownField,
   TackRuntimeError,
   type TackConfig,
   type TackResult,
   type TackRuntime,
+  type TackRuntimeInvokeOptions,
   type TackTool
 } from "@cbxss/tack-core";
 import { createMcpToolRuntime } from "@cbxss/tack-mcp";
@@ -67,6 +69,8 @@ export async function createPluginToolRuntime(
   }
 
   let mcpRuntime: Promise<TackRuntime> | undefined;
+  let closed = false;
+  let closePromise: Promise<void> | undefined;
   const mcp = (): Promise<TackRuntime> =>
     (mcpRuntime ??= createMcpToolRuntime({
       config: { servers: mcpServers } as TackConfig,
@@ -74,13 +78,23 @@ export async function createPluginToolRuntime(
     }));
 
   return {
-    invoke: async <TStructured = unknown>(toolId: string, args: unknown): Promise<TackResult<TStructured>> => {
+    invoke: async <TStructured = unknown>(
+      toolId: string,
+      args: unknown,
+      options?: TackRuntimeInvokeOptions
+    ): Promise<TackResult<TStructured>> => {
+      if (closed) {
+        throw new TackRuntimeError({ message: "Plugin runtime is closed" });
+      }
       const binding = bindingById.get(toolId);
       if (!binding) {
         throw new TackRuntimeError({ message: `Unknown Tack tool: ${toolId}`, toolId });
       }
+      if (options?.signal?.aborted) {
+        throw options.signal.reason ?? new Error("Plugin tool invocation was cancelled");
+      }
       if (binding.kind === "mcp") {
-        return (await mcp()).invoke<TStructured>(toolId, args);
+        return (await mcp()).invoke<TStructured>(toolId, args, options);
       }
       try {
         const data = await readSkillData(binding.skill, binding.exposedName);
@@ -92,14 +106,19 @@ export async function createPluginToolRuntime(
       } catch (cause) {
         return createTackResult<TStructured>({
           isError: true,
-          content: [{ type: "text", text: cause instanceof Error ? cause.message : String(cause) }]
+          content: [{ type: "text", text: formatTackError(cause) }]
         });
       }
     },
     close: async (): Promise<void> => {
-      if (mcpRuntime) {
-        await (await mcpRuntime).close();
+      if (closePromise) {
+        return closePromise;
       }
+      closed = true;
+      closePromise = mcpRuntime
+        ? mcpRuntime.then((runtime) => runtime.close())
+        : Promise.resolve();
+      return closePromise;
     }
   };
 }

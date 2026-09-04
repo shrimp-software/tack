@@ -2,6 +2,7 @@ import {
   TackRuntimeError,
   buildManifest,
   createTackResult,
+  formatTackError,
   httpSourceKind,
   ownField,
   sanitizeData,
@@ -19,11 +20,9 @@ import {
 } from "@cbxss/tack-core";
 
 import {
-  closeConnections,
-  getConnection,
+  McpConnectionPool,
   normalizeServerConfig,
   openConnection,
-  type McpConnection,
   type McpServerConfigEntry
 } from "./client.js";
 
@@ -99,7 +98,7 @@ export async function createMcpToolRuntime(
 
   const servers = ownField<unknown>(ownField(options, "config"), "servers");
   const serverConfigs = snapshotServerConfigs(servers, bindingById);
-  const connections = new Map<string, Promise<McpConnection>>();
+  const connections = new McpConnectionPool();
 
   return {
     invoke: async <TStructured = unknown>(
@@ -112,8 +111,30 @@ export async function createMcpToolRuntime(
         throw new TackRuntimeError({ message: `Unknown Tack tool: ${toolId}`, toolId });
       }
 
-      const connection = await getConnection(connections, binding.serverId, serverConfigs);
+      const signal = options.signal;
+      const cancelled = () => new TackRuntimeError({
+        message: `Failed to call MCP tool ${toolId}: ${formatTackError(signal?.reason)}`,
+        toolId,
+        serverId: binding.serverId,
+        cause: signal?.reason
+      });
+      if (signal?.aborted) {
+        throw cancelled();
+      }
+
+      const lease = await connections.acquire(binding.serverId, serverConfigs);
+      const connection = lease.connection;
+      const abort = () => {
+        if (connection.transport === "stdio") {
+          void connections.invalidate(binding.serverId, lease).catch(() => undefined);
+        }
+      };
+      if (signal?.aborted) {
+        abort();
+        throw cancelled();
+      }
       try {
+        signal?.addEventListener("abort", abort, { once: true });
         const raw = await connection.client.callTool({
           name: binding.upstreamName,
           arguments: sanitizeRecord(args)
@@ -121,14 +142,16 @@ export async function createMcpToolRuntime(
         return createTackResult<TStructured>(raw);
       } catch (cause) {
         throw new TackRuntimeError({
-          message: `Failed to call MCP tool ${toolId}: ${errorMessage(cause)}`,
+          message: `Failed to call MCP tool ${toolId}: ${formatTackError(cause)}`,
           toolId,
           serverId: binding.serverId,
           cause
         });
+      } finally {
+        signal?.removeEventListener("abort", abort);
       }
     },
-    close: async (): Promise<void> => closeConnections(connections)
+    close: async (): Promise<void> => connections.close()
   };
 }
 
@@ -257,10 +280,6 @@ async function discoverServer(
       cause
     });
   }
-}
-
-function errorMessage(cause: unknown): string {
-  return cause instanceof Error ? cause.message : String(cause);
 }
 
 function toDiscoveredTool(tool: unknown): DiscoveredTool[] {

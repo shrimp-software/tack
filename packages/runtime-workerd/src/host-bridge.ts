@@ -1,5 +1,5 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
-import type { ToolInvoker } from "@cbxss/tack-codemode";
+import { errorMessage, isToolDispatchError, type ToolInvoker } from "@cbxss/tack-codemode";
 
 import { closeServer } from "./process.js";
 
@@ -9,9 +9,10 @@ export function startHostBridge(input: {
   readonly maxRequestBytes: number;
   readonly maxResponseBytes: number;
   readonly signal: AbortSignal;
-}): Promise<{ readonly port: number; readonly close: () => Promise<void> }> {
+}): Promise<{ readonly port: number; readonly hasActiveToolCall: () => boolean; readonly close: () => Promise<void> }> {
+  let activeToolCalls = 0;
   const server = createServer((request, response) => {
-    void handleHostRequest(input, request, response);
+    void handleHostRequest({ ...input, beginToolCall: () => { activeToolCalls += 1; }, endToolCall: () => { activeToolCalls -= 1; } }, request, response);
   });
 
   return new Promise((resolve, reject) => {
@@ -42,6 +43,7 @@ export function startHostBridge(input: {
         cleanup();
         resolve({
           port: address.port,
+          hasActiveToolCall: () => activeToolCalls > 0,
           close: () => closeServer(server)
         });
         return;
@@ -59,6 +61,8 @@ async function handleHostRequest(
     readonly maxRequestBytes: number;
     readonly maxResponseBytes: number;
     readonly signal: AbortSignal;
+    readonly beginToolCall: () => void;
+    readonly endToolCall: () => void;
   },
   request: IncomingMessage,
   response: ServerResponse
@@ -86,26 +90,25 @@ async function handleHostRequest(
       return;
     }
 
-    const result = await options.invoker.invoke({
-      path,
-      args: (body as Record<string, unknown>)["args"] ?? {},
-      signal: options.signal
-    });
+    options.beginToolCall();
+    let result: unknown;
+    try {
+      result = await options.invoker.invoke({
+        path,
+        args: (body as Record<string, unknown>)["args"] ?? {},
+        signal: options.signal
+      });
+    } finally {
+      options.endToolCall();
+    }
     writeJsonLimited(response, 200, { ok: true, result }, options.maxResponseBytes);
   } catch (error) {
     writeJson(response, 200, {
       ok: false,
-      error: error instanceof Error ? error.message : String(error),
+      error: errorMessage(error),
       ...(isToolDispatchError(error) ? { code: error.code } : {})
     });
   }
-}
-
-function isToolDispatchError(error: unknown): error is { readonly code: string } {
-  return typeof error === "object" && error !== null && "code" in error &&
-    ["downstream_error", "tool_timeout", "cancelled"].includes(
-      String((error as { readonly code?: unknown }).code)
-    );
 }
 
 function readBody(request: IncomingMessage, maxBytes: number): Promise<unknown> {

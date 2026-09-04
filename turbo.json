@@ -9,9 +9,15 @@
       "dependsOn": ["^build"],
       "outputs": []
     },
+    "@cbxss/tack-agent#typecheck": {
+      "dependsOn": ["@cbxss/tack-sources#build"]
+    },
     "test": {
       "dependsOn": ["^build"],
       "outputs": []
+    },
+    "@cbxss/tack-agent#test": {
+      "dependsOn": ["@cbxss/tack-sources#build"]
     },
     "dev": {
       "cache": false,

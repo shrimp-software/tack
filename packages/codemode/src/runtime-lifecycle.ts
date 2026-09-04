@@ -54,6 +54,7 @@ export function withActiveTimeout<T>(input: {
   readonly signal: AbortSignal;
   readonly isPaused: () => boolean;
   readonly message: string;
+  readonly onTimeout?: ((error: CodeRuntimeTimeoutError) => void) | undefined;
 }): Promise<T> {
   return new Promise((resolve, reject) => {
     let timer: ReturnType<typeof setTimeout> | undefined;
@@ -73,7 +74,13 @@ export function withActiveTimeout<T>(input: {
       sampledAt = now;
       if (elapsedMs >= input.timeoutMs) {
         cleanup();
-        reject(new CodeRuntimeTimeoutError(input.message));
+        const error = new CodeRuntimeTimeoutError(input.message);
+        try {
+          input.onTimeout?.(error);
+        } catch {
+          // Timeout cleanup must not change the timeout result.
+        }
+        reject(error);
         return;
       }
       timer = setTimeout(tick, 10);
@@ -134,5 +141,15 @@ function abortReason(signal: AbortSignal): unknown {
 }
 
 export function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
+  if (error instanceof Error) {
+    const descriptor = Object.getOwnPropertyDescriptor(error, "message");
+    if (descriptor && "value" in descriptor && typeof descriptor.value === "string") {
+      return descriptor.value;
+    }
+  }
+  try {
+    return String(error);
+  } catch {
+    return "Unknown error";
+  }
 }

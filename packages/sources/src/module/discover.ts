@@ -1,7 +1,7 @@
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 
-import type { DiscoveredServer, DiscoveredTool } from "@cbxss/tack-core";
+import { formatTackError, type DiscoveredServer, type DiscoveredTool } from "@cbxss/tack-core";
 
 import { isTackTool } from "../define.js";
 
@@ -53,7 +53,7 @@ export async function importModule(entry: string): Promise<Record<string, unknow
     return (await import(href)) as Record<string, unknown>;
   } catch (cause) {
     throw new Error(
-      `Failed to load module source "${entry}": ${cause instanceof Error ? cause.message : String(cause)}`,
+      `Failed to load module source "${entry}": ${formatTackError(cause)}`,
       { cause }
     );
   }

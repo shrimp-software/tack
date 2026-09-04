@@ -1,4 +1,5 @@
 export * from "./describe.js";
+export * from "./dispatch-error.js";
 export * from "./engine.js";
 export * from "./guide.js";
 export * from "./invoker.js";

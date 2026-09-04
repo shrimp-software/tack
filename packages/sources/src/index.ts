@@ -3,6 +3,7 @@ export { defineTool, isTackTool } from "./define.js";
 export type {
   PlainToolSpec,
   TackToolDefinition,
+  ToolExecutionContext,
   ToolSchema,
   ZodToolSpec
 } from "./define.js";

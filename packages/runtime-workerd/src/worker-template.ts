@@ -1,3 +1,5 @@
+import { TOOL_DISPATCH_CODES } from "@cbxss/tack-codemode";
+
 const COMPATIBILITY_DATE = "2026-07-01";
 
 export function renderWorkerModule(input: {
@@ -13,6 +15,16 @@ const USER_CODE = ${JSON.stringify(input.code)};
 const TIMEOUT_MS = ${input.timeoutMs};
 const MAX_OUTPUT_BYTES = ${input.maxOutputBytes};
 const MAX_TOOL_CALLS = ${input.maxToolCalls};
+const TOOL_DISPATCH_CODES = ${JSON.stringify(TOOL_DISPATCH_CODES)};
+
+class ToolDispatchFailure extends Error {
+  constructor(code, message) {
+    super(message);
+    this.code = code;
+  }
+}
+
+class ExecutionTimeoutFailure extends Error {}
 
 const formatLogArg = (value) => {
   if (typeof value === "string") return value;
@@ -45,10 +57,10 @@ const callTool = async (env, counters, path, args = {}) => {
     });
     const data = await response.json();
     if (!data.ok) {
-      const code = typeof data.code === "string" && ["downstream_error", "tool_timeout", "cancelled"].includes(data.code)
-        ? "[tack:" + data.code + "] "
-        : "";
-      throw new Error(code + (data.error || "Tool bridge failed"));
+      if (typeof data.code === "string" && TOOL_DISPATCH_CODES.includes(data.code)) {
+        throw new ToolDispatchFailure(data.code, data.error || "Tool bridge failed");
+      }
+      throw new Error(data.error || "Tool bridge failed");
     }
     return data.result;
   } finally {
@@ -65,7 +77,7 @@ const withActiveTimeout = (promise, counters) => new Promise((resolve, reject) =
     last = now;
     if (activeElapsed >= TIMEOUT_MS) {
       clearInterval(timer);
-      reject(new Error("Workerd runtime execution timed out after " + TIMEOUT_MS + "ms"));
+      reject(new ExecutionTimeoutFailure("Workerd runtime execution timed out after " + TIMEOUT_MS + "ms"));
     }
   };
   const timer = setInterval(tick, 10);
@@ -74,6 +86,18 @@ const withActiveTimeout = (promise, counters) => new Promise((resolve, reject) =
     (error) => { clearInterval(timer); reject(error); }
   );
 });
+
+const dispatchErrorCode = (error) => {
+  return error instanceof ToolDispatchFailure ? error.code : undefined;
+};
+
+const errorText = (error) => {
+  if (error instanceof Error) {
+    const descriptor = Object.getOwnPropertyDescriptor(error, "message");
+    if (descriptor && "value" in descriptor && typeof descriptor.value === "string") return descriptor.value;
+  }
+  try { return String(error); } catch { return "Unknown error"; }
+};
 
 const serializeResponse = (body) => {
   const text = JSON.stringify(body);
@@ -114,15 +138,16 @@ export default {
         headers: { "content-type": "application/json" }
       });
     } catch (error) {
+      const dispatchCode = dispatchErrorCode(error);
+      const timedOut = error instanceof ExecutionTimeoutFailure;
       return new Response(serializeResponse({
         ok: false,
         emitted,
         logs,
         error: {
-          phase: String(error && error.message || error).includes("timed out") ? "timeout" : "runtime",
-          code: (String(error && error.message || error).match(/^\[tack:(downstream_error|tool_timeout|cancelled)\]/) || [])[1] ||
-            (String(error && error.message || error).includes("timed out") ? "execution_timeout" : "internal_error"),
-          message: String(error && error.message || error).replace(/^\\[tack:[a-z_]+\\] /, "")
+          phase: timedOut ? "timeout" : "runtime",
+          code: dispatchCode ?? (timedOut ? "execution_timeout" : "internal_error"),
+          message: errorText(error)
         }
       }), {
         headers: { "content-type": "application/json" }

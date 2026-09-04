@@ -9,17 +9,36 @@ import {
   findGuide,
   formatTraceLine,
   isOperationAllowed,
+  isToolDispatchCode,
   isTackRef,
   attachTypeScript,
+  CodeRuntimeTimeoutError,
   normalizeDescribeToolInput,
   normalizeSearchInput,
   searchOperations,
+  withActiveTimeout,
   type CodeRuntime,
   type OperationPolicy
 } from "../src/index.js";
 import { buildManifest, listOperations, type TackManifest } from "@cbxss/tack-core";
 
 describe("codemode operation helpers", () => {
+  it("accepts only stable tool-dispatch codes", () => {
+    expect(isToolDispatchCode("downstream_error")).toBe(true);
+    expect(isToolDispatchCode("not_a_code")).toBe(false);
+  });
+
+  it("settles with the timeout even if timeout cleanup throws", async () => {
+    await expect(withActiveTimeout({
+      promise: new Promise<never>(() => undefined),
+      timeoutMs: 1,
+      signal: new AbortController().signal,
+      isPaused: () => false,
+      message: "expected timeout",
+      onTimeout: () => { throw new Error("cleanup exploded"); }
+    })).rejects.toBeInstanceOf(CodeRuntimeTimeoutError);
+  });
+
   it("keeps the execute description lean, with the how-to behind findGuide", () => {
     const description = createExecuteDescription(grafanaManifest());
 

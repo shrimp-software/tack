@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { renderToolsPrelude, type ToolInvoker } from "@cbxss/tack-codemode";
+import { renderToolsPrelude, ToolDispatchError, type ToolInvoker } from "@cbxss/tack-codemode";
 import { createWorkerdRuntime, isWorkerdAvailable } from "../src/index.js";
 
 const runIfWorkerd = isWorkerdAvailable() ? describe : describe.skip;
@@ -134,6 +134,94 @@ return output;
       { path: "search", args: { query: "echo" } },
       { path: "demo.echo", args: { text: "hello" } }
     ]);
+  });
+
+  it("does not charge sequential live tool waits against the execution budget", async () => {
+    const result = await createWorkerdRuntime({ timeoutMs: 100, startupTimeoutMs: 5_000 }).execute({
+      invoker: {
+        invoke: () => new Promise((resolve) => setTimeout(() => resolve({ ok: true, data: "done", text: "done" }), 80))
+      },
+      toolsPrelude: renderToolsPrelude(["demo.wait"]),
+      code: `await tools.demo.wait({}); return await tools.demo.wait({});`
+    });
+
+    expect(result).toMatchObject({ ok: true, result: { ok: true, data: "done" } });
+  });
+
+  it("preserves a downstream tool failure's code and message", async () => {
+    const result = await createWorkerdRuntime({ timeoutMs: 5_000 }).execute({
+      invoker: {
+        invoke: () => Promise.reject(new ToolDispatchError("downstream_error", "downstream timed out"))
+      },
+      toolsPrelude: renderToolsPrelude(["demo.fail"]),
+      code: `return await tools.demo.fail({});`
+    });
+
+    expect(result).toMatchObject({
+      ok: false,
+      error: { phase: "runtime", code: "downstream_error", message: "downstream timed out" }
+    });
+  });
+
+  it("does not trust an arbitrary host error code", async () => {
+    const error = Object.assign(new Error("upstream text is untrusted"), { code: "tool_timeout" });
+    const result = await createWorkerdRuntime({ timeoutMs: 5_000 }).execute({
+      invoker: { invoke: () => Promise.reject(error) },
+      toolsPrelude: renderToolsPrelude(["demo.fail"]),
+      code: `return await tools.demo.fail({});`
+    });
+
+    expect(result).toMatchObject({
+      ok: false,
+      error: { phase: "runtime", code: "internal_error" }
+    });
+  });
+
+  it("does not trust a user-thrown dispatch-shaped error", async () => {
+    const result = await createWorkerdRuntime({ timeoutMs: 5_000 }).execute({
+      invoker: fakeInvoker([]),
+      toolsPrelude: renderToolsPrelude(),
+      code: `const error = new Error("user error"); error.code = "tool_timeout"; throw error;`
+    });
+
+    expect(result).toMatchObject({
+      ok: false,
+      error: { phase: "runtime", code: "internal_error", message: "user error" }
+    });
+  });
+
+  it("does not infer an execution timeout from a user error message", async () => {
+    const result = await createWorkerdRuntime({ timeoutMs: 5_000 }).execute({
+      invoker: fakeInvoker([]),
+      toolsPrelude: renderToolsPrelude(),
+      code: `throw new Error("the request timed out upstream");`
+    });
+
+    expect(result).toMatchObject({
+      ok: false,
+      error: {
+        phase: "runtime",
+        code: "internal_error",
+        message: "the request timed out upstream"
+      }
+    });
+  });
+
+  it("does not invoke a user-defined error-message getter", async () => {
+    const result = await createWorkerdRuntime({ timeoutMs: 5_000 }).execute({
+      invoker: fakeInvoker([]),
+      toolsPrelude: renderToolsPrelude(),
+      code: `
+const error = new Error("safe fallback");
+Object.defineProperty(error, "message", { get() { throw new Error("message getter ran"); } });
+throw error;
+`
+    });
+
+    expect(result).toMatchObject({
+      ok: false,
+      error: { phase: "runtime", code: "internal_error", message: "Unknown error" }
+    });
   });
 
   it("blocks direct fetch from user code", async () => {
@@ -321,7 +409,6 @@ return readFile;
   it("terminates runaway executions", async () => {
     const result = await createWorkerdRuntime({
         timeoutMs: 300,
-        hostTimeoutGraceMs: 100,
         startupTimeoutMs: 5_000
       }).execute({
         invoker: fakeInvoker([]),

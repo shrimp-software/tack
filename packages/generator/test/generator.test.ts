@@ -1453,7 +1453,7 @@ describe("generateSdk", () => {
       .toBe(await readFile(join(outDirA, "tools.d.ts"), "utf8"));
   });
 
-  it("tolerates a namespace that shadows a tools builtin", async () => {
+  it("renames a namespace that would shadow a tools builtin", async () => {
     tmpPath = await mkdtemp(join(tmpdir(), "tack-generator-ambient-reserved-"));
     const config: TackConfig = {
       servers: { search: { transport: "stdio", command: "node" } }
@@ -1472,10 +1472,8 @@ describe("generateSdk", () => {
     await generateSdkPromise({ manifest, outDir: tmpPath });
 
     const dts = await readFile(join(tmpPath, "tools.d.ts"), "utf8");
-    expect(dts).toContain('readonly "search": {');
-    expect(dts).toContain("// note:");
-    // the builtin `search(...)` signature is dropped so it cannot clash
-    expect(dts).not.toContain("search(input?: {");
+    expect(dts).toContain('readonly "search2": {');
+    expect(dts).toContain("search(input?: {");
     await expectGeneratedSdkToCompile(tmpPath);
   });
 

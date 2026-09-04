@@ -106,7 +106,7 @@ export type TackError =
 export function formatTackError(error: unknown): string {
   const message = readOwnData(error, "message");
   if (message.found) {
-    return withCauseMessage(String(message.value), error);
+    return withCauseMessage(formatErrorField(message.value), error);
   }
 
   if (error instanceof Error) {
@@ -115,6 +115,10 @@ export function formatTackError(error: unknown): string {
 
   if (typeof error === "object" && error !== null) {
     return "[object Object]";
+  }
+
+  if (typeof error === "function") {
+    return "[function]";
   }
 
   return String(error);
@@ -131,7 +135,13 @@ function withCauseMessage(message: string, error: unknown): string {
     return message;
   }
 
-  return `${message}: ${String(causeMessage.value)}`;
+  return `${message}: ${formatErrorField(causeMessage.value)}`;
+}
+
+function formatErrorField(value: unknown): string {
+  return value === null || (typeof value !== "object" && typeof value !== "function")
+    ? String(value)
+    : "[object Object]";
 }
 
 function readOwnString(value: unknown, key: PropertyKey): string | undefined {

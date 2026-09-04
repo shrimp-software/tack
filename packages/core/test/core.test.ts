@@ -967,9 +967,21 @@ describe("errors", () => {
       "Invalid Tack config at tack.config.json: config.shape was removed; Tack now infers operation paths automatically."
     );
     expect(formatTackError({ message: 123 })).toBe("123");
+    expect(formatTackError({
+      message: {
+        toString() {
+          throw new Error("message conversion should not run");
+        }
+      }
+    })).toBe("[object Object]");
     expect(formatTackError(accessorMessage)).toBe("[object Object]");
     expect(formatTackError(inheritedMessage)).toBe("[object Object]");
     expect(formatTackError(prototypeMessageError)).toBe("Error");
+    expect(formatTackError(Object.assign(() => undefined, {
+      toString() {
+        throw new Error("function conversion should not run");
+      }
+    }))).toBe("[function]");
     expect(formatTackError("plain")).toBe("plain");
   });
 });

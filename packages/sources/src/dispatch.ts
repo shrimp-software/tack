@@ -6,6 +6,7 @@ import {
   type TackManifest,
   type TackResult,
   type TackRuntime,
+  type TackRuntimeInvokeOptions,
   type TackTool,
   type Transport
 } from "@cbxss/tack-core";
@@ -74,14 +75,23 @@ export async function createRuntime({ config, manifest, configDir }: CreateRunti
   const preparedConfig = await prepareConfig(config, { configDir });
   const toolsBySource = groupToolsBySource(manifest);
 
-  const runtimeBySource = new Map(
-    await Promise.all(
-      [...toolsBySource].map(
-        async ([source, tools]) =>
-          [source, await source.createRuntime({ config: preparedConfig, tools })] as const
-      )
+  const runtimeBySource = new Map<Source, TackRuntime>();
+  const created = await Promise.allSettled(
+    [...toolsBySource].map(async ([source, tools]) =>
+      [source, await source.createRuntime({ config: preparedConfig, tools })] as const
     )
   );
+  const failure = created.find((result) => result.status === "rejected");
+  if (failure?.status === "rejected") {
+    const runtimes = created.flatMap((result) => result.status === "fulfilled" ? [result.value[1]] : []);
+    await Promise.allSettled(runtimes.map((runtime) => runtime.close()));
+    throw failure.reason;
+  }
+  for (const result of created) {
+    if (result.status === "fulfilled") {
+      runtimeBySource.set(...result.value);
+    }
+  }
 
   const routes = new Map<string, TackRuntime>();
   for (const [source, tools] of toolsBySource) {
@@ -95,20 +105,31 @@ export async function createRuntime({ config, manifest, configDir }: CreateRunti
   }
 
   const runtimes = [...runtimeBySource.values()];
+  let closed = false;
+  let closePromise: Promise<void> | undefined;
 
   return {
     invoke: async <TStructured = unknown>(
       toolId: string,
-      args: unknown
+      args: unknown,
+      options?: TackRuntimeInvokeOptions
     ): Promise<TackResult<TStructured>> => {
+      if (closed) {
+        throw new TackRuntimeError({ message: "Tack runtime is closed" });
+      }
       const runtime = routes.get(toolId);
       if (!runtime) {
         throw new TackRuntimeError({ message: `Unknown Tack tool: ${toolId}`, toolId });
       }
-      return runtime.invoke<TStructured>(toolId, args);
+      return runtime.invoke<TStructured>(toolId, args, options);
     },
     close: async (): Promise<void> => {
-      await Promise.all(runtimes.map((runtime) => runtime.close()));
+      if (closePromise) {
+        return closePromise;
+      }
+      closed = true;
+      closePromise = Promise.all(runtimes.map((runtime) => runtime.close())).then(() => undefined);
+      return closePromise;
     }
   };
 }

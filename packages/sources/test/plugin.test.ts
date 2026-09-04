@@ -49,4 +49,18 @@ describe("plugin source", () => {
       await runtime.close();
     }
   }, 15_000);
+
+  it("does not read a plugin skill after its invocation is cancelled", async () => {
+    const config = pluginConfig();
+    const manifest = await discoverManifest(config);
+    const runtime = await createRuntime({ config, manifest });
+    const controller = new AbortController();
+    const reason = new Error("already cancelled");
+    controller.abort(reason);
+    try {
+      await expect(runtime.invoke("acme.greet", {}, { signal: controller.signal })).rejects.toBe(reason);
+    } finally {
+      await runtime.close();
+    }
+  }, 15_000);
 });

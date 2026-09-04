@@ -7,8 +7,9 @@ import {
 } from "@cbxss/tack-core";
 
 import { describeTool, normalizeDescribeToolInput } from "./describe.js";
+import { ToolDispatchError } from "./dispatch-error.js";
 import { isOperationAllowed, type OperationPolicy } from "./policy.js";
-import { CodeRuntimeTimeoutError, withTimeout } from "./runtime-lifecycle.js";
+import { CodeRuntimeTimeoutError, errorMessage, withTimeout } from "./runtime-lifecycle.js";
 import { attachTypeScript, listNamespaces, normalizeSearchInput, searchOperations } from "./search.js";
 import type { BuiltinTraceEvent, ToolCallOutput, ToolInvoker, ToolTraceEvent } from "./types.js";
 
@@ -111,14 +112,15 @@ async function traceBuiltin<T>(
     });
     return result;
   } catch (error) {
+    const message = errorMessage(error);
     await emitTrace(context, {
       type: "builtin_call",
       path,
       ok: false,
       durationMs: Date.now() - started,
-      error: error instanceof Error ? error.message : String(error)
+      error: message
     });
-    return builtinCallError(error instanceof Error ? error.message : String(error));
+    return builtinCallError(message);
   }
 }
 
@@ -223,7 +225,7 @@ async function invokeOperation(
     if (error instanceof CodeRuntimeTimeoutError) {
       controller.abort(error);
     }
-    const message = error instanceof Error ? error.message : `Failed to call ${operation.fullPathString}`;
+    const message = errorMessage(error) || `Failed to call ${operation.fullPathString}`;
     await emitAudit(context, {
       type: "tool_call",
       timestamp: new Date().toISOString(),
@@ -299,17 +301,6 @@ function parseJsonText(value: string): unknown {
     return JSON.parse(value) as unknown;
   } catch {
     return undefined;
-  }
-}
-
-export class ToolDispatchError extends Error {
-  constructor(
-    readonly code: "downstream_error" | "tool_timeout" | "cancelled",
-    message: string,
-    cause?: unknown
-  ) {
-    super(message, cause === undefined ? undefined : { cause });
-    this.name = "ToolDispatchError";
   }
 }
 

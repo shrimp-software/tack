@@ -76,7 +76,7 @@ async function executeInWorkerd(input: ExecuteInWorkerdInput): Promise<Execution
     timeoutMs: Math.max(100, input.settings.timeoutMs)
   };
   const tmp = join(tmpdir(), `tack-workerd-${process.pid}-${Date.now()}-${executionId}`);
-  let host: { readonly port: number; readonly close: () => Promise<void> } | undefined;
+  let host: { readonly port: number; readonly hasActiveToolCall: () => boolean; readonly close: () => Promise<void> } | undefined;
   let workerd: WorkerdProcess | undefined;
 
   try {
@@ -116,11 +116,8 @@ async function executeInWorkerd(input: ExecuteInWorkerdInput): Promise<Execution
 
     const response = await runWorker({
       port: listenPort,
-      // The worker pauses its JS clock around host calls. This outer watchdog
-      // is only a process-safety backstop, so leave one tool-call budget for a
-      // request already in flight rather than racing it at the JS deadline.
-      timeoutMs: settings.timeoutMs + settings.toolTimeoutMs,
-      hostTimeoutGraceMs: settings.hostTimeoutGraceMs,
+      timeoutMs: settings.timeoutMs,
+      isPaused: host.hasActiveToolCall,
       signal: input.signal
     });
     return normalizeWorkerResponse(response);

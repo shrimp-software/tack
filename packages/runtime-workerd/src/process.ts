@@ -7,8 +7,10 @@ import { fileURLToPath } from "node:url";
 import {
   CodeRuntimeTimeoutError,
   delay,
+  errorMessage,
   isAbortError,
   throwIfAborted,
+  withActiveTimeout,
   type ExecutionResult
 } from "@cbxss/tack-codemode";
 import type { Server } from "node:http";
@@ -66,23 +68,26 @@ export function startWorkerdProcess(input: {
 export async function runWorker(input: {
   readonly port: number;
   readonly timeoutMs: number;
-  readonly hostTimeoutGraceMs: number;
+  readonly isPaused: () => boolean;
   readonly signal: AbortSignal;
 }): Promise<ExecutionResult> {
   const controller = new AbortController();
   const abort = () => controller.abort(input.signal.reason);
   input.signal.addEventListener("abort", abort, { once: true });
-  const timer = setTimeout(
-    () => controller.abort(new CodeRuntimeTimeoutError(`Workerd runtime execution timed out after ${input.timeoutMs}ms`)),
-    input.timeoutMs + input.hostTimeoutGraceMs
-  );
   try {
     throwIfAborted(input.signal);
-    const response = await fetch(`http://127.0.0.1:${input.port}/run`, {
-      method: "POST",
-      signal: controller.signal
+    const completed = await withActiveTimeout({
+      promise: fetch(`http://127.0.0.1:${input.port}/run`, {
+        method: "POST",
+        signal: controller.signal
+      }).then(async (response) => ({ response, text: await response.text() })),
+      timeoutMs: input.timeoutMs,
+      signal: input.signal,
+      isPaused: input.isPaused,
+      message: `Workerd runtime execution timed out after ${input.timeoutMs}ms`,
+      onTimeout: (error) => controller.abort(error)
     });
-    const text = await response.text();
+    const { response, text } = completed;
     const parsed = text.length > 0 ? JSON.parse(text) as unknown : {};
     if (!response.ok) {
       throw new Error(`workerd returned ${response.status}: ${text}`);
@@ -105,7 +110,6 @@ export async function runWorker(input: {
     throw error;
   } finally {
     input.signal.removeEventListener("abort", abort);
-    clearTimeout(timer);
   }
 }
 
@@ -131,7 +135,7 @@ export async function waitReady(port: number, token: string, timeoutMs: number, 
     await delay(20, signal);
   }
 
-  throw new Error(`workerd did not become ready: ${lastError instanceof Error ? lastError.message : String(lastError)}`);
+  throw new Error(`workerd did not become ready: ${errorMessage(lastError)}`);
 }
 
 export function getAvailableLocalPort(signal: AbortSignal): Promise<number> {

@@ -1,9 +1,11 @@
 import {
   createTackResult,
+  formatTackError,
   TackRuntimeError,
   type TackConfig,
   type TackResult,
   type TackRuntime,
+  type TackRuntimeInvokeOptions,
   type TackTool
 } from "@cbxss/tack-core";
 
@@ -27,6 +29,7 @@ export interface CreateModuleRuntimeOptions {
 export function createModuleRuntime(options: CreateModuleRuntimeOptions): TackRuntime {
   const toolsById = indexModuleTools(options.config, options.tools);
   const definitionsByEntry = new Map<string, Promise<Map<string, TackToolDefinition>>>();
+  let closed = false;
 
   const loadDefinitions = (entry: string): Promise<Map<string, TackToolDefinition>> => {
     const cached = definitionsByEntry.get(entry);
@@ -49,14 +52,24 @@ export function createModuleRuntime(options: CreateModuleRuntimeOptions): TackRu
   return {
     invoke: async <TStructured = unknown>(
       toolId: string,
-      args: unknown
+      args: unknown,
+      options?: TackRuntimeInvokeOptions
     ): Promise<TackResult<TStructured>> => {
+      if (closed) {
+        throw new TackRuntimeError({ message: "Module runtime is closed" });
+      }
       const meta = toolsById.get(toolId);
       if (!meta) {
         throw new TackRuntimeError({ message: `Unknown Tack tool: ${toolId}`, toolId });
       }
+      if (options?.signal?.aborted) {
+        throw options.signal.reason ?? new Error("Module tool invocation was cancelled");
+      }
 
       const definition = (await loadDefinitions(meta.entry)).get(meta.upstreamName);
+      if (options?.signal?.aborted) {
+        throw options.signal.reason ?? new Error("Module tool invocation was cancelled");
+      }
       if (!definition) {
         throw new TackRuntimeError({
           message: `Module source no longer exports tool ${meta.upstreamName}`,
@@ -65,13 +78,19 @@ export function createModuleRuntime(options: CreateModuleRuntimeOptions): TackRu
       }
 
       try {
-        const output = await definition.handler(definition.parse(args ?? {}));
+        const output = await definition.handler(definition.parse(args ?? {}), {
+          signal: options?.signal
+        });
         return createTackResult<TStructured>(successEnvelope(output));
       } catch (cause) {
+        if (options?.signal?.aborted) {
+          throw options.signal.reason ?? cause;
+        }
         return createTackResult<TStructured>(failureEnvelope(cause));
       }
     },
     close: async (): Promise<void> => {
+      closed = true;
       definitionsByEntry.clear();
     }
   };
@@ -123,8 +142,7 @@ function successEnvelope(value: unknown): CallEnvelope {
 }
 
 function failureEnvelope(cause: unknown): CallEnvelope {
-  const message = cause instanceof Error ? cause.message : String(cause);
-  return { isError: true, content: [textBlock(message)] };
+  return { isError: true, content: [textBlock(formatTackError(cause))] };
 }
 
 function textBlock(text: string): { readonly type: "text"; readonly text: string } {

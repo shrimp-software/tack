@@ -25,14 +25,19 @@ interface BaseToolSpec {
   readonly output?: ToolSchema;
 }
 
+/** Per-invocation state available to a local module tool handler. */
+export interface ToolExecutionContext {
+  readonly signal?: AbortSignal | undefined;
+}
+
 export interface ZodToolSpec<TSchema extends z.ZodType, TOutput> extends BaseToolSpec {
   readonly input: TSchema;
-  readonly handler: (input: z.output<TSchema>) => TOutput | Promise<TOutput>;
+  readonly handler: (input: z.output<TSchema>, context: ToolExecutionContext) => TOutput | Promise<TOutput>;
 }
 
 export interface PlainToolSpec<TInput, TOutput> extends BaseToolSpec {
   readonly input?: JsonSchema;
-  readonly handler: (input: TInput) => TOutput | Promise<TOutput>;
+  readonly handler: (input: TInput, context: ToolExecutionContext) => TOutput | Promise<TOutput>;
 }
 
 export interface TackToolDefinition<TInput = unknown, TOutput = unknown> {
@@ -42,7 +47,7 @@ export interface TackToolDefinition<TInput = unknown, TOutput = unknown> {
   readonly outputSchema: JsonSchema | undefined;
   /** Validate and coerce raw args against the input schema; identity when there is no Zod schema. */
   readonly parse: (input: unknown) => unknown;
-  readonly handler: (input: TInput) => Promise<TOutput>;
+  readonly handler: (input: TInput, context: ToolExecutionContext) => Promise<TOutput>;
 }
 
 /**
@@ -74,7 +79,7 @@ export function defineTool(
     inputSchema: toJsonSchema(input),
     outputSchema: toJsonSchema(spec.output),
     parse,
-    handler: (value: unknown): Promise<unknown> => Promise.resolve(handler(value))
+    handler: (value: unknown, context: ToolExecutionContext): Promise<unknown> => Promise.resolve(handler(value, context))
   };
 
   // Non-enumerable so the brand never leaks into discovery's export walk or a spread.

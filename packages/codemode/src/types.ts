@@ -1,3 +1,5 @@
+import type { ToolDispatchCode } from "./dispatch-error.js";
+
 export interface ToolInvokeInput {
   readonly path: string;
   readonly args: unknown;
@@ -20,9 +22,7 @@ export type ToolErrorCode =
   | "unknown_operation"
   | "operation_denied"
   | "tool_error"
-  | "downstream_error"
-  | "tool_timeout"
-  | "cancelled"
+  | ToolDispatchCode
   | "internal_error";
 
 export interface ToolInvoker {

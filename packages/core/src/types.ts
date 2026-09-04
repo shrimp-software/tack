@@ -198,6 +198,7 @@ export interface TackRuntime {
     args: unknown,
     options?: TackRuntimeInvokeOptions
   ): Promise<TackResult<TStructured>>;
+  /** Releases runtime resources. Once called, this runtime must not accept new invocations. */
   close(): Promise<void>;
 }
 
