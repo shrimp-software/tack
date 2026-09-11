@@ -1,21 +1,21 @@
-/**
- * The result type every code-mode tool call resolves to. `await tools.x()`
- * inside `execute` returns this shape; it is the discriminated-union narrowing
- * of `@cbxss/tack-codemode`'s runtime `ToolCallOutput`
- * (`{ ok; data?; text; raw?; error? }`).
- *
- * Single-sourced here as BOTH a string (emitted verbatim into generated `.ts` /
- * ambient `.d.ts` by `@cbxss/tack-sdk-types`) and a real type (for internal
- * assertions), so the two can never disagree.
- *
- * Distinct from `TackResult<T>` in `./types.ts`, which is the method-bearing
- * result the static SDK client returns — do not conflate.
- */
-export const CODE_MODE_RESULT_TS =
-  "type CodeModeResult<T> =\n" +
-  "  | { ok: true; data: T; text: string; raw?: unknown }\n" +
-  "  | { ok: false; error: { message: string }; text: string; raw?: unknown };\n";
-
+/** The code-mode downstream-call result, shared by runtime callers and generated SDKs. */
+export const CODE_MODE_RESULT_TS = `type CodeModeResult<T> =
+  | { ok: true; data: T; responseId: string | null; dataShape: unknown; upstreamOutcome: "succeeded" }
+  | { ok: false; error: { code?: string; message: string }; responseId?: string | null; upstreamOutcome?: "not_started" | "succeeded" | "failed" | "unknown" };
+`;
 export type CodeModeResult<T> =
-  | { ok: true; data: T; text: string; raw?: unknown }
-  | { ok: false; error: { message: string }; text: string; raw?: unknown };
+  | {
+      ok: true;
+      data: T;
+      responseId: string | null;
+      /** Compact type-only skeleton of `data` — inspect it before writing
+       *  `data.x.y` paths, especially across `Promise.all` batches. */
+      dataShape: unknown;
+      upstreamOutcome: "succeeded";
+    }
+  | {
+      ok: false;
+      error: { code?: string; message: string };
+      responseId?: string | null;
+      upstreamOutcome?: "not_started" | "succeeded" | "failed" | "unknown";
+    };

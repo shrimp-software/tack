@@ -59,7 +59,7 @@ export async function buildAmbientDts(
     }
     const { inputTypeScript, outputTypeScript } = await operationTypeScript(operation, {
       includeUnknownOutput: true,
-      unknownOutputAs: "any"
+      unknownOutputAs: "unknown"
     });
     interfaces.push(inputTypeScript.trim());
     interfaces.push((outputTypeScript ?? `export type ${names.outputType} = any;`).trim());

@@ -1,0 +1,12 @@
+{
+  "id": "grafana-upload-incident",
+  "title": "Investigate delayed reels upload processing",
+  "prompt": "Instapix users reported uploads stuck in processing yesterday. Investigate the last 24 hours of this synthetic dataset using the connected tools. Locate the affected region and interval, quantify queue depth and upload completion, inspect worker logs and deployment annotations, and explain whether processing recovered. Separate request acceptance from successful media processing.",
+  "expectations": [
+    "Finds the historical processing degradation.",
+    "Correlates worker health, queue backlog and upload completion.",
+    "Uses scoped historical Loki queries.",
+    "Checks recovery and healthy regional controls.",
+    "Reports evidence and uncertainty concisely."
+  ]
+}

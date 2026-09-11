@@ -25,10 +25,10 @@ export interface WorkerdRuntimeSettings {
 }
 
 const DEFAULT_TIMEOUT_MS = 30_000;
-const DEFAULT_MAX_OUTPUT_BYTES = 1_000_000;
+const DEFAULT_MAX_OUTPUT_BYTES = 16 * 1024 * 1024;
 const DEFAULT_MAX_TOOL_CALLS = 100;
 const DEFAULT_MAX_TOOL_REQUEST_BYTES = 1_000_000;
-const DEFAULT_MAX_TOOL_RESPONSE_BYTES = 1_000_000;
+const DEFAULT_MAX_TOOL_RESPONSE_BYTES = 10 * 1024 * 1024;
 const DEFAULT_STARTUP_TIMEOUT_MS = 15_000;
 
 export function normalizeRuntimeOptions(options: WorkerdRuntimeOptions): WorkerdRuntimeSettings {

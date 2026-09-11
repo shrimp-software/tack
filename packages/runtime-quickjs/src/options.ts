@@ -9,7 +9,6 @@ export interface QuickJSRuntimeOptions {
   readonly maxToolCalls?: number;
   readonly maxToolRequestBytes?: number;
   readonly maxToolResponseBytes?: number;
-  readonly maxInlineResultBytes?: number;
 }
 
 export interface QuickJSLimits {
@@ -21,17 +20,15 @@ export interface QuickJSLimits {
   readonly maxToolCalls: number;
   readonly maxToolRequestBytes: number;
   readonly maxToolResponseBytes: number;
-  readonly maxInlineResultBytes: number;
 }
 
 const DEFAULT_TIMEOUT_MS = 30_000;
 const DEFAULT_MEMORY_MB = 128;
 const DEFAULT_MAX_STACK_BYTES = 1_000_000;
-const DEFAULT_MAX_OUTPUT_BYTES = 1_000_000;
+const DEFAULT_MAX_OUTPUT_BYTES = 16 * 1024 * 1024;
 const DEFAULT_MAX_TOOL_CALLS = 100;
 const DEFAULT_MAX_TOOL_REQUEST_BYTES = 1_000_000;
-const DEFAULT_MAX_TOOL_RESPONSE_BYTES = 1_000_000;
-const DEFAULT_MAX_INLINE_RESULT_BYTES = 4_096;
+const DEFAULT_MAX_TOOL_RESPONSE_BYTES = 10 * 1024 * 1024;
 
 export function normalizeRuntimeOptions(options: QuickJSRuntimeOptions): QuickJSLimits {
   const timeoutMs = readOwnNumber(options, "timeoutMs") ?? DEFAULT_TIMEOUT_MS;
@@ -43,8 +40,7 @@ export function normalizeRuntimeOptions(options: QuickJSRuntimeOptions): QuickJS
     maxOutputBytes: readOwnNumber(options, "maxOutputBytes") ?? DEFAULT_MAX_OUTPUT_BYTES,
     maxToolCalls: readOwnNumber(options, "maxToolCalls") ?? DEFAULT_MAX_TOOL_CALLS,
     maxToolRequestBytes: readOwnNumber(options, "maxToolRequestBytes") ?? DEFAULT_MAX_TOOL_REQUEST_BYTES,
-    maxToolResponseBytes: readOwnNumber(options, "maxToolResponseBytes") ?? DEFAULT_MAX_TOOL_RESPONSE_BYTES,
-    maxInlineResultBytes: readOwnNumber(options, "maxInlineResultBytes") ?? DEFAULT_MAX_INLINE_RESULT_BYTES
+    maxToolResponseBytes: readOwnNumber(options, "maxToolResponseBytes") ?? DEFAULT_MAX_TOOL_RESPONSE_BYTES
   };
 }
 

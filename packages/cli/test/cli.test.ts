@@ -131,7 +131,7 @@ describe("CLI", () => {
     const docs = await readFile(docsPath, "utf8");
     expect(docs).toContain("# Example Tools");
     expect(docs).toContain("### `example.add`");
-    expect(docs).toContain("await tools.example.add(args)");
+    expect(docs).toContain('await tools.example.add({ "a": 0, "b": 0 })');
 
     const inspect = await runCli(["inspect", "--config", configPath], tmpPath);
     expect(inspect.stdout).toContain("example.add -> example.add");
@@ -148,21 +148,22 @@ describe("CLI", () => {
       "--json"
     ], tmpPath);
     expect(JSON.parse(executed.stdout)).toMatchObject({
-      ok: true,
+      status: "completed",
       result: { message: "from execute" }
     });
 
-    // On-by-default typecheck blocks a cell with a bad argument key.
+    // Explicit strict checking blocks a cell with a bad argument key.
     const badArg = await runCli([
       "execute",
       "return await tools.example.echo({ mesage: 'typo' });",
+      "--typecheck", "strict",
       "--config",
       configPath,
       "--json"
     ], tmpPath, { reject: false });
     expect(badArg.exitCode).toBe(1);
     expect(JSON.parse(badArg.stdout)).toMatchObject({
-      ok: false,
+      status: "error",
       error: { phase: "typecheck" }
     });
 
@@ -285,7 +286,7 @@ describe("CLI", () => {
       ],
       tmpPath
     );
-    expect(JSON.parse(executed.stdout)).toMatchObject({ ok: true, result: "greet" });
+    expect(JSON.parse(executed.stdout)).toMatchObject({ status: "completed", result: "greet" });
 
     const removed = await runCli(["plugins", "remove", "acme", "--config", configPath], tmpPath);
     expect(removed.stdout).toContain("Removed plugin acme");
@@ -298,5 +299,5 @@ function runCli(
   cwd: string,
   options: { readonly reject?: boolean } = {}
 ) {
-  return execa("bun", [cliSource, ...args], { cwd, reject: options.reject ?? true });
+  return execa(process.execPath, [cliSource.replace("/src/", "/dist/").replace(/\.ts$/u, ".js"), ...args], { cwd, reject: options.reject ?? true });
 }

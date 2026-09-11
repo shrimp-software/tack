@@ -1,0 +1,12 @@
+{
+  "id": "grafana-reels-incident",
+  "title": "Investigate ongoing regional playback buffering",
+  "prompt": "Users in Singapore report Instapix reels buffering now. Determine the current impact using the synthetic dataset clock, compare regions, inspect CDN cache behavior, find relevant log and change evidence, and follow one log trace_id into sampled dependency spans. Explain the most plausible cause and whether there is evidence of recovery. Use the connected tools; do not claim illustrative spans prove all requests behaved the same way.",
+  "expectations": [
+    "Uses current synthetic time, not the wall clock.",
+    "Quantifies playback and dependency signals across regions.",
+    "Correlates routing change and origin/cache logs.",
+    "Looks up an actual returned trace ID.",
+    "Does not claim recovery without supporting metrics."
+  ]
+}

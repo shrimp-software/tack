@@ -1,6 +1,8 @@
 # Tack
 
-Tack turns live sources — MCP servers, local TypeScript modules, and plugin bundles — into agent-friendly TypeScript tools. It discovers tools, infers stable operation paths, generates a typed SDK, and exposes `execute` and `guide` over MCP.
+Tack turns live sources — MCP servers, local TypeScript modules, and plugin bundles — into agent-friendly TypeScript tools. It discovers tools, infers stable operation paths, generates a typed SDK, and exposes one `execute` tool over MCP.
+
+Tack 2 requires Node 22.18+ for its execution host; Node 24 is the reference runtime. Bun remains supported for installing and building the workspace.
 
 The SDK target is TypeScript only. Code mode runs on QuickJS by default, with workerd available as an optional runtime.
 
@@ -18,6 +20,9 @@ The SDK target is TypeScript only. Code mode runs on QuickJS by default, with wo
 | `@cbxss/tack-codemode` | Search, describe, execution engine, runtime helpers |
 | `@cbxss/tack-runtime-quickjs` | Default isolated runtime |
 | `@cbxss/tack-runtime-workerd` | Optional process-isolated runtime |
+| `@cbxss/tack-host-jobs` | Bounded worker jobs and SQLite coordination |
+| `@cbxss/tack-validation` | Runtime JSON Schema validation |
+| `@cbxss/tack-responses` | Durable response storage, paging, scans and quotas |
 | `@cbxss/tack-agent` | Agent-facing MCP server |
 | `@cbxss/tack-service` | Authenticated HTTP service |
 | `@cbxss/tack` | CLI entrypoint |
@@ -99,6 +104,58 @@ The `service` block is only needed for bearer-protected `host` or for `serve`.
 
 ## Sources
 
+The MCP surface is `execute({code,typecheck?:"strict"|"off"})`. Every cell starts
+fresh on both HTTP and stdio. Semantic checking is opt-in; runtime input validation
+always runs before downstream calls, without coercion.
+
+```ts
+// Search items carry `inputSchema` and a copy-paste `example` — call directly,
+// no `tools.describe.tool` round trip. TypeScript signatures are behind `types: true`.
+const { items } = await tools.search({ query: "list datasources" });
+const list = await tools.call(items[0].path, {});
+if (!list.ok) throw new Error(list.error.message);
+const result = await tools.grafana.queryPrometheus({
+  datasourceUid: list.data[0].uid, // resolve ids from a list call, never guess
+  expr: 'up{service="feed-api"}',
+  endTime: "now",
+});
+if (!result.ok) return result.error;
+// `result.data` is the whole downstream value, in the sandbox. Shape it here.
+return result.data.result.slice(0, 5);
+```
+
+A successful downstream call returns `{ ok: true, data, responseId, dataShape }`
+— `data` is the full value, delivered into the sandbox to process in code. A
+failed call returns `{ ok: false, error: { code, message } }` and identifies
+whether the upstream call succeeded, failed, did not start, or has an unknown
+outcome; never automatically replay a write.
+
+`data` is not visible to the model until a cell returns it. `dataShape` — always
+present on a successful result — is a compact type-only skeleton of `data`
+(`{ result: { array: 240, of: "object{metric,values}" } }`), so the model can
+see the layout before writing `data.x.y` paths without a round trip. `shape(value,
+maxDepth?)`, a synchronous helper in every cell, is the same skeleton on demand,
+deeper by default.
+
+A downstream response larger than the sandbox limit (default 10 MiB) rejects with
+`error.code "response_too_large"` — recover by narrowing the upstream query (a
+smaller time window, an added filter) and retrying. The model-facing structured
+result is capped at 16 KiB (32 KiB on the MCP wire including its text copy); a
+returned value over that comes back with `resultTruncated: true`, keeping
+structure: an array's leading whole elements plus `{ shown, total }`, an object's
+leading keys' whole values plus `{ shownKeys, totalKeys, omitted }`, or a
+readable string head for a scalar. Summarize in code rather than returning raw
+payloads.
+
+Every execution is recorded to an internal audit store under `storage.root`
+(default `.tack/state` beside the config); it is not reachable from sandbox code.
+Authenticated HTTP uses stable user IDs; open HTTP uses temporary shared storage.
+Direct embedders supply an `ExecutionHost({root})` and close it when finished.
+
+See [migration details](MIGRATION.md) for the breaking API and generated type changes.
+The direct static SDK still exposes `TackResult.raw`, `text()` and `json()`; it is a
+host client API, separate from sandbox code-mode delivery.
+
 Every `servers` entry is a **source**. Tack supports these source types:
 
 - `stdio` / `http` — an MCP server, discovered live.
@@ -133,7 +190,7 @@ export const searchDocs = defineTool({
 
 Module sources run in the host process with full authority — unlike code mode, they are not sandboxed. They are trusted code, on the same footing as the config itself; agent calls into them still pass through `security.allowedOperations` and the audit log. A handler that throws (or fails input validation) surfaces as an error result, not a crash. Wrapping a command-line tool is just a handler that spawns it.
 
-Running `.ts` entries needs a TypeScript-aware runtime: `tack` under `tsx`/`bun`, or Node 22.18+ with type stripping. `.js` / `.mjs` entries work everywhere.
+Running `.ts` entries needs a TypeScript-aware runtime: `tack` under `tsx`, or Node 22.18+ with type stripping. `.js` / `.mjs` entries work everywhere.
 
 A worked example lives at `packages/sources/examples/markdown-source.ts` (serve a folder of markdown files as `list` / `read` tools); `packages/agent/test/module-source.e2e.test.ts` registers it and drives it end-to-end over MCP.
 
@@ -153,8 +210,8 @@ This writes a top-level `plugins` block to `tack.config.json`. Git plugins are r
 
 - Generated SDK files are marked `/* Generated by Tack. Do not edit directly. */`.
 - The generator refuses to overwrite non-generated `.ts` files.
-- MCP `execute` keeps a short dynamic description; call `guide({ name: "execute" })` for the full guide.
-- Code mode provides `tools.search`, `tools.describe.tool`, `tools.call`, inferred `tools.<path>` methods, and `emit`.
-- Persistent sessions (`session` tool, `execute({ session })`, `deref`) and result refs need one server instance per connection: they work over `tack mcp` (stdio) on the QuickJS runtime, not `tack host` (stateless HTTP) or workerd. Live tool-call trace streams over both as `notifications/progress`.
+- MCP `execute` keeps a short dynamic description; call `tools.guidance.read({name:"execute"})` inside a cell for more detail.
+- Code mode provides `tools.search`, `tools.describe.tool`, `tools.call`, inferred `tools.<path>` methods, `emit`, and `shape`. Every successful downstream result carries a `dataShape` type skeleton.
+- Cells are fresh across transports — no variables, refs or saved-response reads persist across calls. Live tool-call traces stream as `notifications/progress`.
 - Evals live in `evals/`; Kibana setup lives in `evals/kibana/`.
 - `repos/` is read-only reference material and must not be imported.

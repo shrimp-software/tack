@@ -71,7 +71,7 @@ describe("module source over MCP (e2e)", () => {
     const agent = await connectAgent();
     try {
       const { tools } = await agent.client.listTools();
-      expect(tools.map((tool) => tool.name).sort()).toEqual(["deref", "execute", "guide"]);
+      expect(tools.map((tool) => tool.name).sort()).toEqual(["execute"]);
     } finally {
       await agent.close();
     }
@@ -98,38 +98,6 @@ describe("module source over MCP (e2e)", () => {
           { path: "docs.list", hasTs: true },
           { path: "docs.read", hasTs: true }
         ]
-      });
-    } finally {
-      await agent.close();
-    }
-  });
-
-  it("retains a large result as a ref and derefs it from the auto-session", async () => {
-    const agent = await connectAgent();
-    try {
-      const big = await agent.client.callTool({
-        name: "execute",
-        arguments: {
-          code: "return Array.from({ length: 400 }, (_, i) => ({ i, blob: 'x'.repeat(50) }));"
-        }
-      });
-      expect((big.structuredContent as { result: { __tackRef?: string } }).result.__tackRef).toBe("$1");
-      expect((big.structuredContent as { session?: string }).session).toMatch(/^s_/);
-      expect(extractText(big.content)).toContain("retained; use `$1`");
-
-      const counted = await agent.client.callTool({
-        name: "execute",
-        arguments: { code: "return $1.length;" }
-      });
-      expect(counted.structuredContent).toMatchObject({ status: "completed", result: 400 });
-
-      const page = await agent.client.callTool({
-        name: "deref",
-        arguments: { ref: "$1", limit: 2 }
-      });
-      expect(page.structuredContent).toMatchObject({
-        truncated: true,
-        value: [{ i: 0 }, { i: 1 }]
       });
     } finally {
       await agent.close();
@@ -228,34 +196,6 @@ describe("module source over MCP (e2e)", () => {
     }
   });
 
-  it("carries scope across bare execute cells and resets on fresh", async () => {
-    const agent = await connectAgent();
-    try {
-      const first = await agent.client.callTool({
-        name: "execute",
-        arguments: {
-          code: `const doc = await tools.call("docs.read", { slug: "architecture" });\nconst title = doc.data.title;`
-        }
-      });
-      expect(first.isError).toBeUndefined();
-
-      const second = await agent.client.callTool({
-        name: "execute",
-        arguments: { code: `return title.toUpperCase();` }
-      });
-      expect(second.structuredContent).toMatchObject({ status: "completed", result: "ARCHITECTURE" });
-
-      // `fresh: true` starts a clean scope — the earlier `title` is gone.
-      const afterFresh = await agent.client.callTool({
-        name: "execute",
-        arguments: { fresh: true, code: "return title;" }
-      });
-      expect(afterFresh.structuredContent).toMatchObject({ status: "error" });
-    } finally {
-      await agent.close();
-    }
-  });
-
   it("streams a live tool-call trace as progress notifications", async () => {
     const agent = await connectAgent();
     const messages: string[] = [];
@@ -296,7 +236,7 @@ describe("module source over MCP (e2e)", () => {
     try {
       const blocked = await agent.client.callTool({
         name: "execute",
-        arguments: { code: 'return await tools.docs.raed({ slug: "getting-started" });' }
+        arguments: { typecheck: "strict", code: 'return await tools.docs.raed({ slug: "getting-started" });' }
       });
       expect(blocked.isError).toBe(true);
       expect(blocked.structuredContent).toMatchObject({

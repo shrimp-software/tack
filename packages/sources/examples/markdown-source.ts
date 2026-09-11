@@ -1,8 +1,7 @@
 /**
  * Example module source: serve a directory of markdown files as two tools.
  *
- * In your own project this import is `from "@cbxss/tack-sources"`; it is relative here
- * only because the file lives inside the package.
+ * This example uses the public module-source API.
  *
  * Point a config entry at it:
  *
@@ -19,7 +18,7 @@ import { fileURLToPath } from "node:url";
 
 import { z } from "zod";
 
-import { defineTool } from "../src/index.js";
+import { defineTool } from "@cbxss/tack-sources";
 
 const DOCS_DIR = process.env["TACK_DOCS_DIR"]
   ? resolve(process.env["TACK_DOCS_DIR"])

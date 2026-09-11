@@ -5,5 +5,5 @@
     "declaration": false,
     "declarationMap": false
   },
-  "include": ["run.ts", "kibana/**/*.ts"]
+  "include": ["run.ts", "kibana/**/*.ts", "grafana/**/*.ts"]
 }

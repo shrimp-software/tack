@@ -12,8 +12,8 @@ describe("buildAmbientDts", () => {
     expect(dts).toContain("type CodeModeResult<T> =");
     expect(dts).toContain("export interface GrafanaAlertingRulesListInput");
     expect(dts).toContain("declare const fetch: never;");
-    // schema-less output → any, not unknown
-    expect(dts).toMatch(/export type Grafana\w*Output = any;/);
+    // schema-less output stays unknown
+    expect(dts).toMatch(/export type Grafana\w*Output = unknown;/);
   });
 
   it("honors policy", async () => {
@@ -25,6 +25,18 @@ describe("buildAmbientDts", () => {
 
 describe("createTypeChecker", () => {
   const checker = createTypeChecker({ manifest: grafanaManifest() });
+
+  it("types the collapsed result and rejects removed payload fields", async () => {
+    expect(await checker.check([
+      "const result = await tools.grafana.datasources.list();",
+      "if (result.ok && result.responseId) {",
+      "  return result.data;",
+      "}",
+      "return null;"
+    ].join("\n"))).toEqual({ diagnostics: [] });
+    const old = await checker.check("const result = await tools.grafana.datasources.list(); if (result.ok) return [result.raw, result.text, result.delivery];");
+    expect(old.diagnostics.filter(d => d.code === "TS2339")).toHaveLength(3);
+  });
 
   it("flags an unknown argument key (with a suggestion)", async () => {
     const out = await checker.check(
@@ -41,7 +53,7 @@ describe("createTypeChecker", () => {
 
   it("flags a missing await", async () => {
     const out = await checker.check(
-      "const r = tools.grafana.datasources.list();\nif (r.ok) emit(r.data);"
+      "const r = tools.grafana.datasources.list();\nif (r.ok && r.delivery === 'inline') emit(r.data);"
     );
     expect(out.diagnostics.some((d) => d.code === "TS2339" && d.line === 2)).toBe(true);
   });
@@ -65,13 +77,6 @@ describe("createTypeChecker", () => {
       ].join("\n")
     );
     expect(out).toEqual({ diagnostics: [] });
-  });
-
-  it("declares session scope names so a later cell isn't flagged", async () => {
-    const out = await checker.check("return prev + ($1 as number);", {
-      scopeNames: ["prev", "$1", "$_"]
-    });
-    expect(out.diagnostics).toEqual([]);
   });
 
   it("is warm after the first check (informational)", async () => {

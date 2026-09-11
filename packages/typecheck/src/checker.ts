@@ -4,7 +4,6 @@ import type { TackManifest } from "@cbxss/tack-core";
 import type {
   OperationPolicy,
   TypeChecker,
-  TypeCheckContext,
   TypeCheckOutcome,
   TypeDiagnostic
 } from "@cbxss/tack-codemode";
@@ -14,7 +13,6 @@ import { buildAmbientDts } from "./ambient.js";
 
 const CELL_PATH = "/__tack_cell.ts";
 const AMBIENT_PATH = "/__tack_ambient.d.ts";
-const REF_NAME = /^\$(\d+|_)$/;
 
 const COMPILER_OPTIONS: ts.CompilerOptions = {
   noEmit: true,
@@ -77,14 +75,13 @@ export function createTypeChecker(options: CreateTypeCheckerOptions): TypeChecke
   };
 
   return {
-    check: async (code: string, context?: TypeCheckContext): Promise<TypeCheckOutcome> => {
+    check: async (code: string): Promise<TypeCheckOutcome> => {
       try {
         const ls = await initService();
-        const decls = scopeDecls(context?.scopeNames ?? []);
-        // Lines before the user's first line: the scope decls + the wrapper's
-        // `async function …` line. `getLineAndCharacterOfPosition` is 0-based.
-        const offset = (decls ? decls.split("\n").length : 0) + 1;
-        cellText = `${decls}${decls ? "\n" : ""}async function __tackCheckCell(): Promise<any> {\n${code}\n}\n`;
+        // Lines before the user's first line: the wrapper's `async function …`
+        // line. `getLineAndCharacterOfPosition` is 0-based.
+        const offset = 1;
+        cellText = `async function __tackCheckCell(): Promise<any> {\n${code}\n}\n`;
         cellVersion += 1;
 
         const diagnostics = [
@@ -121,14 +118,6 @@ export function createTypeChecker(options: CreateTypeCheckerOptions): TypeChecke
       }
     }
   };
-}
-
-/** Declare prior-cell scope so the cell isn't flagged for undefined names. */
-function scopeDecls(names: readonly string[]): string {
-  return names
-    .filter((name) => /^[A-Za-z_$][\w$]*$/.test(name))
-    .map((name) => `declare const ${name}: ${REF_NAME.test(name) ? "unknown" : "any"};`)
-    .join("\n");
 }
 
 function toLibPath(fileName: string, libDir: string): string {

@@ -133,7 +133,7 @@ describe("Tack HTTP service", () => {
       code: "return tools.grafana.datasources.list();"
     });
     expect(executed).toMatchObject({
-      ok: true,
+      status: "completed",
       result: {
         ok: true,
         data: { toolId: "grafana.list_datasources" }
@@ -161,15 +161,12 @@ describe("Tack HTTP service", () => {
     });
 
     expect(executed).toMatchObject({
-      ok: true,
+      status: "completed",
       result: {
         ok: true,
         data: { toolId: "grafana.list_datasources" }
       },
-      trace: {
-        runtime: "quickjs",
-        isolation: "vm"
-      }
+      receiptId: expect.any(String)
     });
     expect(calls).toEqual([{ toolId: "grafana.list_datasources", args: {} }]);
   });
@@ -270,7 +267,7 @@ describe("Tack HTTP service", () => {
       code: "return tools.describe.tool({ path: 'grafana.datasources.list' });"
     });
     expect(allowed).toMatchObject({
-      ok: true,
+      status: "completed",
       result: {
         path: "grafana.datasources.list",
         description: "List Grafana data sources.",
@@ -282,7 +279,7 @@ describe("Tack HTTP service", () => {
       code: "return tools.describe.tool({ path: 'grafana.alerting.rules.list' });"
     });
     expect(denied).toMatchObject({
-      ok: true,
+      status: "completed",
       result: {
         error: {
           code: "tool_not_found",
@@ -330,7 +327,7 @@ describe("Tack HTTP service", () => {
       code: "return tools.grafana.alerting.rules.list();"
     });
     expect(denied).toMatchObject({
-      ok: true,
+      status: "completed",
       result: {
         ok: false,
         error: {

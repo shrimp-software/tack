@@ -60,7 +60,7 @@ async function exists(path: string): Promise<boolean> {
 export function tackSkillMarkdown(): string {
   return `---
 name: tack
-description: Work with Tack, the TypeScript/Bun toolchain that turns live MCP servers into agent-friendly TypeScript SDKs, MCP execute/guide tools, and hosted HTTP services. Use when configuring tack.config.json, discovering MCP tools, generating SDK/docs, debugging Tack CLI setup, running Tack MCP hosts, or invoking Tack operations from Codex.
+description: Work with Tack, the TypeScript/Node toolchain that turns live MCP servers into agent-friendly TypeScript SDKs, one MCP execute tool, and hosted HTTP services. Use when configuring tack.config.json, discovering MCP tools, generating SDK/docs, debugging Tack CLI setup, running Tack MCP hosts, or invoking Tack operations from Codex.
 ---
 
 # Tack
@@ -77,9 +77,19 @@ Use the local \`tack\` CLI as the source of truth. Prefer deterministic CLI comm
 6. Expose agent-facing tools with \`tack mcp\` for stdio or \`tack host --path /mcp\` for Streamable HTTP.
 7. Use \`tack serve\` only when \`service.users\` has bearer tokens configured.
 
+## Code mode
+
+The only public MCP tool is \`execute({code,typecheck?:"strict"|"off"})\`. Each call starts fresh. \`tools.search({query})\` returns items with \`inputSchema\` and a copy-paste \`example\` — call operations directly from those, no \`tools.describe.tool\` round trip (it is for the output schema or an ambiguous match). An empty query returns paginated namespace items; \`types:true\` adds TypeScript signatures. Read extra guidance with \`tools.guidance.read({name:"execute"})\` inside execute.
+
+A successful call returns \`{ok:true, data, responseId, dataShape}\`; a failed one returns \`{ok:false, error:{code,message}}\`. \`data\` is the whole downstream value, delivered into the sandbox — filter and aggregate it in code and return a small summary. \`data\` is not visible to the model until a cell returns it; \`dataShape\` (always present on success) is a compact type skeleton of \`data\` — read it before writing property paths. \`shape(value, depth?)\` gives a deeper on-demand view. A downstream response too large for the sandbox rejects with \`error.code "response_too_large"\`; narrow the upstream query and retry. A returned value over the model budget comes back with \`resultTruncated:true\`, keeping structure (an array's leading elements plus \`{shown,total}\`, an object's leading keys plus \`{shownKeys,totalKeys,omitted}\`). Do not automatically replay writes after failures.
+
+Semantic typechecking is off unless explicitly requested. Runtime argument validation is always enforced. There are no variables, refs, saved-response reads, sessions, or delegate tools; every call runs fresh.
+
 ## Config Notes
 
 - \`servers\` is required and maps server IDs to \`stdio\` or \`http\` MCP connections.
+- Run the host under Node 22.18+ (Node 24 is the reference). Bun can install/build the workspace; its worker limits cannot host execution.
+- Execution keeps an internal audit record under \`storage.root\` (default \`.tack/state\`, relative to the config). Open HTTP servers use temporary shared storage; authenticated callers have separate owners.
 - Runtime defaults to QuickJS. Use \`runtime.type: "workerd"\` only when process isolation is needed.
 - Security policy uses inferred operation paths in \`security.allowedOperations\` and \`security.deniedOperations\`.
 - Generated SDK output defaults to \`.tack/generated\`; do not hand-edit generated files.
@@ -89,7 +99,8 @@ Use the local \`tack\` CLI as the source of truth. Prefer deterministic CLI comm
 Run project checks after changing Tack itself:
 
 \`\`\`sh
-bun run typecheck
+bun run build
+bun run typecheck -- --concurrency=1
 bun run test
 \`\`\`
 `;

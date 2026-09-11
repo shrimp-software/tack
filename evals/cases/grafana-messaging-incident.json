@@ -1,0 +1,12 @@
+{
+  "id": "grafana-messaging-incident",
+  "title": "Investigate asynchronous message delivery delays",
+  "prompt": "Within the last 48 hours of the Instapix synthetic dataset, find a period of delayed direct messages and push notifications. Use the connected tools to identify the region, quantify consumer lag and dependency health, inspect broker and application logs, correlate changes, and verify recovery. Explain why successful persistence or request acceptance does not guarantee timely delivery.",
+  "expectations": [
+    "Uses a historical window covering both days.",
+    "Correlates messaging and notifications through their shared Kafka dependency.",
+    "Checks broker disk utilization and log evidence.",
+    "Compares healthy regions and recovery.",
+    "Separates acceptance from delivery latency."
+  ]
+}

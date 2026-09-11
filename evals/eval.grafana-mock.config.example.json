@@ -1,0 +1,48 @@
+{
+  "codex": {
+    "bin": "codex",
+    "cd": "${REPO_ROOT}",
+    "flags": [
+      "--json",
+      "--ephemeral",
+      "--skip-git-repo-check",
+      "--ignore-rules",
+      "--sandbox",
+      "read-only"
+    ],
+    "outputSchema": "evals/schemas/final-answer.schema.json",
+    "envFromProcess": ["CODEX_HOME", "OPENAI_API_KEY"],
+    "timeoutMs": 240000
+  },
+  "outputDir": "evals/runs",
+  "cases": [
+    "evals/cases/grafana-feed-incident.json",
+    "evals/cases/grafana-upload-incident.json",
+    "evals/cases/grafana-reels-incident.json",
+    "evals/cases/grafana-messaging-incident.json",
+    "evals/cases/grafana-healthy-control.json"
+  ],
+  "targets": [
+    {
+      "id": "tack-grafana-mock",
+      "mcpName": "tack",
+      "command": "bun",
+      "args": [
+        "run",
+        "--cwd",
+        "packages/cli",
+        "dev",
+        "--",
+        "mcp",
+        "--config",
+        "${REPO_ROOT}/evals/.local/tack.grafana-mock.config.json"
+      ]
+    },
+    {
+      "id": "grafana-mock-direct",
+      "mcpName": "grafana",
+      "command": "bun",
+      "args": ["run", "${REPO_ROOT}/evals/grafana/server.ts"]
+    }
+  ]
+}

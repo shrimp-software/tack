@@ -16,7 +16,7 @@ export interface OperationTypeScript {
  * `search({ namespace, types: true })` so a single operation is typed the same
  * way whichever route asked.
  */
-export async function operationTypeScript(
+async function compileOperationTypeScript(
   operation: TackOperation,
   options?: {
     readonly includeUnknownOutput?: boolean;
@@ -38,4 +38,14 @@ export async function operationTypeScript(
     inputTypeScript,
     ...(outputTypeScript ? { outputTypeScript } : {})
   };
+}
+
+const cache = new WeakMap<TackOperation, Map<string, Promise<OperationTypeScript>>>();
+export function operationTypeScript(operation: TackOperation, options?: Parameters<typeof compileOperationTypeScript>[1]): Promise<OperationTypeScript> {
+  let entries = cache.get(operation);
+  if (!entries) { entries = new Map(); cache.set(operation, entries); }
+  const key = JSON.stringify(options ?? {});
+  let value = entries.get(key);
+  if (!value) { value = compileOperationTypeScript(operation, options); entries.set(key, value); }
+  return value;
 }

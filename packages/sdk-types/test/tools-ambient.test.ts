@@ -58,13 +58,10 @@ describe("renderToolsAmbientDts", () => {
     expect(renderToolsAmbientDts([a, b])).toBe(renderToolsAmbientDts([b, a]));
   });
 
-  it("drops the colliding builtin signature when a namespace shadows one", () => {
-    const dts = renderToolsAmbientDts([
-      method({ namespaceName: "search", path: ["run"], inputType: "SI", outputType: "SO" })
-    ]);
-    expect(dts).toContain('readonly "search": {');
-    expect(dts).toContain("// note:");
-    expect(dts).not.toContain("search(input?: {");
+  it("rejects reserved namespaces consistently with the runtime", () => {
+    for (const namespaceName of ["search", "describe", "guidance", "call", "then"]) {
+      expect(() => renderToolsAmbientDts([method({ namespaceName, path: ["run"] })])).toThrow("Reserved tool namespace");
+    }
   });
 
   it("renderAmbientToolsBlock is the tools block alone — no header, import, or aliases", () => {

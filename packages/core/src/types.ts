@@ -78,7 +78,6 @@ export interface TackConfig {
     readonly maxToolCalls?: number | undefined;
     readonly maxToolRequestBytes?: number | undefined;
     readonly maxToolResponseBytes?: number | undefined;
-    readonly maxInlineResultBytes?: number | undefined;
   } | undefined;
   readonly security?: {
     readonly allowedOperations?: readonly string[] | undefined;
@@ -94,23 +93,12 @@ export interface TackConfig {
     readonly rateLimit?: RateLimitConfig | undefined;
     readonly users?: readonly ServiceUserConfig[] | undefined;
   } | undefined;
+  readonly storage?: { readonly root?: string | undefined } | undefined;
   readonly output?: {
     readonly dir?: string | undefined;
   } | undefined;
-  readonly delegate?: {
-    readonly model: string;
-    readonly apiKeyEnv?: string | undefined;
-    readonly baseUrl?: string | undefined;
-    readonly replans?: number | undefined;
-  } | undefined;
-  /**
-   * Pre-run typecheck of code-mode cells. On by default (`mode: "error"` blocks
-   * a cell on any diagnostic); set `mode: "warn"` to attach diagnostics but run
-   * anyway, or `mode: "off"` to disable.
-   */
-  readonly typecheck?: {
-    readonly mode?: "error" | "warn" | "off" | undefined;
-  } | undefined;
+  /** Enable the optional strict checker; execution remains unchecked unless requested. */
+  readonly typecheck?: { readonly mode?: "strict" | "off" | undefined } | undefined;
 }
 
 export interface RateLimitConfig {

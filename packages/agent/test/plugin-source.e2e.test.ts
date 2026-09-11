@@ -138,7 +138,7 @@ describe("plugin source over MCP (e2e)", () => {
 
       const blocked = await agent.client.callTool({
         name: "execute",
-        arguments: { code: 'return await tools.acme.gret();' }
+        arguments: { code: 'return await tools.acme.gret();', typecheck: 'strict' }
       });
       expect(blocked.structuredContent).toMatchObject({
         status: "error",

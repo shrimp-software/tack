@@ -1,6 +1,6 @@
 {
   "name": "@cbxss/tack-runtime-quickjs",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "type": "module",
   "exports": {
     ".": {
@@ -17,8 +17,8 @@
     "test": "vitest run --passWithNoTests"
   },
   "dependencies": {
-    "@cbxss/tack-codemode": "1.0.0",
-    "@cbxss/tack-core": "1.0.0",
+    "@cbxss/tack-codemode": "2.0.0",
+    "@cbxss/tack-core": "2.0.0",
     "acorn": "^8.14.0",
     "esbuild": "^0.28.1",
     "quickjs-emscripten": "0.32.0"

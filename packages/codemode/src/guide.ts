@@ -21,11 +21,12 @@ export function createExecuteDescription(
   policy?: OperationPolicy | undefined
 ): string {
   const lines = [
-    "Run TypeScript in Tack's sandboxed runtime against your connected API tools.",
-    "Scope persists across `execute` calls; `{ fresh: true }` starts a clean scope.",
-    "",
-    'Call `guide({ name: "execute" })` for the how-to: discovering tools, calling them,',
-    "`emit`/`return`, refs, and file outputs."
+    "Execute TypeScript against connected tools. Every call runs fresh — no variables or state carry across calls.",
+    "Runtime arguments are always validated. Semantic checking is off by default; omit typecheck for routine investigations.",
+    "Discover: const {items} = await tools.search({query:'your task'}). Each item has `inputSchema` and a ready `example`; call directly — tools.<namespace>.<op>({...}) or tools.call(items[0].path,{...}). tools.describe.tool is only for the output schema or an ambiguous match. List identifiers (datasource/dashboard UIDs) before using them; a thin search result is not proof an operation is missing.",
+    "A successful call returns {ok:true, data, responseId, dataShape}; a failed one {ok:false, error:{code,message}}. `data` is the full value in the sandbox — process it here and return a small summary. You cannot see `data` until a cell returns it: read `dataShape` (a compact type skeleton, always present) before writing `data.x.y` paths; shape(value,depth?) is a deeper view.",
+    "Oversized downstream response: the call throws error.code 'response_too_large' — narrow the upstream query and retry. Oversized return value: comes back with resultTruncated:true, structure kept (array → leading items + {shown,total}; object → leading keys + {shownKeys,totalKeys,omitted}). Return aggregates, not raw payloads.",
+    "More help: tools.guidance.read({name:'execute'})."
   ];
   const inventory = renderNamespaceInventory(manifest, policy);
   if (inventory.length > 0) {
@@ -52,7 +53,7 @@ export function findGuide(
   }
   return {
     name: EXECUTE_GUIDE_NAME,
-    summary: "Discover tools, call them, emit results, and work with refs in the execute sandbox.",
+    summary: "Discover tools, call them, and summarize results in the execute sandbox.",
     body: renderExecuteGuide(manifest, policy)
   };
 }
@@ -63,45 +64,16 @@ export function renderExecuteGuide(
   policy?: OperationPolicy | undefined
 ): string {
   return [
-    "# execute",
-    "",
-    "## Workflow",
-    "",
-    "1. `tools.search({})` lists namespaces; `tools.search({ namespace })` lists a namespace's",
-    "   operations with descriptions + `params` (required input keys); `tools.search({ query })`",
-    "   keyword-searches across everything.",
-    "2. `tools.describe.tool({ path })` for one tool's full input schema when `params` isn't enough",
-    "   (`{ types: true }` adds TypeScript defs). `tools.search({ namespace, types: true })` gives every",
-    "   tool in a namespace fully typed at once. A bad path returns `error.suggestions` — use one.",
-    "3. Call via `tools.<namespace>.<...>(args)` or `tools.call(path, args)`. Await every call.",
-    "   Don't pass discriminator fields Tack already injects.",
-    "4. `emit(value)` appends user-visible output; `return value` is the model-readable final result.",
-    "",
-    "## Rules",
-    "",
-    "- A tool call returns `{ ok: true, data }` or `{ ok: false, error: { message } }` — branch on `ok`.",
-    "- Scope persists across cells: top-level `const`/`let`/`function`/`class` and reassignments",
-    "  carry to the next `execute` call. `{ fresh: true }` resets it.",
-    "- A large returned/emitted value comes back as `{ __tackRef: \"$1\", type, preview }` — use `$1`",
-    "  (or `$_` for the last) as a normal variable in the next cell, or `deref({ ref: \"$1\", offset?, limit? })`.",
-    "- Filter large collections in code rather than calling a per-item tool in a loop.",
-    "- No `fetch` — all API calls go through `tools.*`. TypeScript type syntax is stripped before",
-    "  execution; `enum` and decorators are not supported.",
-    "- `emit` forwards MCP content blocks as-is; a `{ _tag: \"ToolFile\", mimeType, encoding: \"base64\",",
-    "  data, byteLength, name? }` renders by MIME (image/audio/text/resource). `return` is for ordinary",
-    "  structured data only — not files, base64, or content blocks.",
-    "- Previews truncate at 30000 chars; emitted text files at 64000.",
-    "",
-    "## Example",
-    "",
-    "```ts",
-    "const { items } = await tools.search({ namespace: \"grafana\", query: \"list datasources\" });",
-    "const result = await tools.call(items[0].path, {});",
-    "return result.ok ? result.data : result.error;",
-    "```",
-    "",
+    "# Execute",
+    "Discover with tools.search({query?,namespace?,limit?,offset?,types?}). Every result item carries `path`, `description`, `params` (required keys), the full `inputSchema`, and a copy-paste `example` — enough to call the operation directly. An empty query lists namespaces; add `namespace` to list one namespace's operations. `types:true` adds TypeScript signatures.",
+    "Call tools.call(path,{...}) or tools.<namespace>.<operation>({...}) straight from the item's inputSchema/example. tools.describe.tool({path}) is only for the output schema or an ambiguous match — not a required step before a call. List identifiers (datasource/dashboard UIDs) before using them, never guess; a thin or empty search result is not evidence an operation is missing — broaden the query or list the namespace before concluding a capability is unavailable.",
+    "A successful call returns {ok:true, data, responseId, dataShape}; a failed one {ok:false, error:{code,message}}. `data` is the whole value in the sandbox — filter and aggregate it in code. You cannot see `data` until a cell returns it: `dataShape` (a compact type skeleton, always present on success) is your first look at the layout — read it before writing property paths, and check it per result in a Promise.all batch rather than assuming a shared shape. shape(value,depth?) is a deeper on-demand view.",
+    "Every call runs fresh — no variables, refs or saved-response reads persist; if a later step needs earlier data, call the tool again. No fetch or shell access.",
+    "A downstream response too large to deliver into the sandbox rejects with error.code 'response_too_large' — narrow the upstream query and retry. A return value over the model budget comes back with resultTruncated:true keeping structure: an array's leading items plus {shown,total}, or an object's leading keys plus {shownKeys,totalKeys,omitted}. Return compact statistics and selected evidence, not entire log or time-series payloads.",
+    "For time-relative reasoning read the current time from an environment/status/health operation, not from the newest timestamp in a result.",
+    "Runtime argument validation is mandatory. Semantic TypeScript checking is opt-in with execute({code,typecheck:'strict'}). An error does not mean earlier calls were rolled back; never replay a write automatically.",
     renderNamespaceInventory(manifest, policy)
-  ].join("\n");
+  ].join("\n\n");
 }
 
 export function availableNamespaces(
@@ -127,6 +99,7 @@ function renderNamespaceInventory(
     TOOL_INVENTORY_HEADER,
     "",
     "Namespaces you have connected. Their tools live under `tools.<namespace>...`.",
-    ...namespaces.map((namespace) => `- \`${namespace}\``)
+    ...namespaces.slice(0, 24).map((namespace) => `- \`${namespace}\``),
+    ...(namespaces.length > 24 ? ["More namespaces: tools.search({query:''})"] : [])
   ].join("\n");
 }

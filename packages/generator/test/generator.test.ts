@@ -1400,13 +1400,13 @@ describe("generateSdk", () => {
       '"list"(args?: GrafanaDatasourcesListInput): Promise<CodeModeResult<GrafanaDatasourcesListOutput>>;'
     );
     expect(dts).toContain("call<T = unknown>(path: string");
-    expect(dts).toContain("search(input?: {");
-    expect(dts).toContain("describe: { tool(input: { path: string; types?: boolean })");
+    expect(dts).toContain("search(input: {");
+    expect(dts).toContain('describe: { tool(input: { "path": string;');
     expect(dts).toContain("function emit(value: unknown): void;");
     expect(dts).toContain("export {};");
     // the discriminator Tack injects is not part of the input type
     const toolsBlock = dts.slice(dts.indexOf("declare global"));
-    expect(toolsBlock).not.toContain('"operation"');
+    expect(toolsBlock.slice(0, toolsBlock.indexOf("call<T"))).not.toContain('"operation"');
 
     // The ambient surface compiles alongside the rest of the generated SDK.
     await writeFile(
@@ -1420,6 +1420,7 @@ describe("generateSdk", () => {
         "  emit(listed);",
         "  const viaCall = await tools.call<number>(\"grafana.datasources.list\", {});",
         "  const found = await tools.search({ namespace: \"grafana\" });",
+        "  if (!found.ok) throw new Error(found.error.message);",
         "  return { viaCall, paths: found.items.map((i) => i.path) };",
         "}",
         ""
@@ -1473,7 +1474,7 @@ describe("generateSdk", () => {
 
     const dts = await readFile(join(tmpPath, "tools.d.ts"), "utf8");
     expect(dts).toContain('readonly "search2": {');
-    expect(dts).toContain("search(input?: {");
+    expect(dts).toContain("search(input: {");
     await expectGeneratedSdkToCompile(tmpPath);
   });
 

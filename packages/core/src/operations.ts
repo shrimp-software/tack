@@ -45,7 +45,22 @@ const LEADING_ACTION_TOKENS = new Set([
   "write"
 ]);
 
+const operationCache = new WeakMap<TackManifest, TackOperation[]>();
+/** A catalog revision is immutable; replace the snapshot to publish a refresh. */
+export function snapshotManifest(manifest: TackManifest): TackManifest {
+  if (operationCache.has(manifest)) return manifest;
+  const clean = sanitizeData(manifest, {}) as TackManifest;
+  function freeze(value: unknown): void {
+    if (value && typeof value === "object") { for (const item of Object.values(value)) freeze(item); Object.freeze(value); }
+  }
+  freeze(clean);
+  listOperations(clean);
+  return clean;
+}
+
 export function listOperations(manifest: TackManifest): TackOperation[] {
+  const cached = operationCache.get(manifest);
+  if (cached) return [...cached];
   // The trust boundary: a manifest may be hand-built or read from a JSON cache.
   // Snapshot to plain own data once (cycles broken), then read plain fields.
   const clean = sanitizeData(manifest, {}) as TackManifest | undefined;
@@ -88,7 +103,8 @@ export function listOperations(manifest: TackManifest): TackOperation[] {
     }
   }
 
-  return operations;
+  if (manifest && typeof manifest === "object" && Object.isFrozen(manifest)) operationCache.set(manifest, operations);
+  return [...operations];
 }
 
 function toOperationTool(tool: unknown): OperationTool[] {
@@ -156,7 +172,60 @@ export function findOperation(
 }
 
 function operationExample(operation: TackOperation): string {
-  return `await tools.${operation.fullPathString}(${hasRequiredInput(operation.inputSchema) ? "args" : ""})`;
+  return `await tools.${operation.fullPathString}(${exampleArgLiteral(operation.inputSchema)})`;
+}
+
+/**
+ * A copy-paste-ready argument literal for an operation's example: an object with
+ * every required property set to a type-shaped placeholder, or `""` when nothing
+ * is required. The agent edits the placeholders instead of reading the schema.
+ */
+function exampleArgLiteral(schema: JsonSchema): string {
+  const record = schemaRecord(sanitizeData(schema, {}));
+  if (!record) {
+    return "";
+  }
+  const required = schemaValue(record, "required");
+  const names = Array.isArray(required)
+    ? required.filter((key): key is string => typeof key === "string")
+    : [];
+  if (names.length === 0) {
+    return hasRequiredInput(schema) ? "args" : "";
+  }
+  const properties = schemaProperties(schema) ?? {};
+  const parts = names.map(
+    (name) => `${JSON.stringify(name)}: ${examplePlaceholder(schemaRecord(properties[name]))}`
+  );
+  return `{ ${parts.join(", ")} }`;
+}
+
+function examplePlaceholder(prop: Record<string, unknown> | undefined): string {
+  if (!prop) {
+    return `"..."`;
+  }
+  const enumValues = schemaValue(prop, "enum");
+  if (Array.isArray(enumValues) && enumValues.length > 0) {
+    return JSON.stringify(enumValues[0]);
+  }
+  if (Object.prototype.hasOwnProperty.call(prop, "const")) {
+    return JSON.stringify(schemaValue(prop, "const"));
+  }
+  const type = schemaValue(prop, "type");
+  switch (Array.isArray(type) ? type[0] : type) {
+    case "number":
+    case "integer":
+      return "0";
+    case "boolean":
+      return "false";
+    case "array":
+      return "[]";
+    case "object":
+      return "{}";
+    case "null":
+      return "null";
+    default:
+      return `"..."`;
+  }
 }
 
 export function operationArgs(operation: TackOperation, args: unknown): Record<string, unknown> {

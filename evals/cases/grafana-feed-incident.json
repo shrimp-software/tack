@@ -1,0 +1,12 @@
+{
+  "id": "grafana-feed-incident",
+  "title": "Investigate historical feed latency with regional controls",
+  "prompt": "Investigate Instapix home feed slowness during the last 3 hours of the connected synthetic dataset. Discover its clock and tooling. Identify the affected region and interval, quantify error ratio and p95 latency, correlate a deployment and dependency logs, and check recovery against an unaffected region. Use available tools (Tack execute if connected through Tack). Cite queries and concrete observations; distinguish evidence from inference.",
+  "expectations": [
+    "Discovers the fixed dataset clock.",
+    "Uses metrics, logs and annotations.",
+    "Compares a healthy region and a recovery window.",
+    "Does not equate sampled error-log counts with request error ratio.",
+    "Provides a supported causal hypothesis rather than asserting causality from timing alone."
+  ]
+}

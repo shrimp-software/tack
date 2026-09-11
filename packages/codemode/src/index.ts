@@ -1,3 +1,4 @@
+export * from "./data-shape.js";
 export * from "./describe.js";
 export * from "./dispatch-error.js";
 export * from "./engine.js";
@@ -12,3 +13,4 @@ export * from "./tools.js";
 export * from "./trace-line.js";
 export * from "./type-diagnostics.js";
 export * from "./types.js";
+export * from "./host.js";

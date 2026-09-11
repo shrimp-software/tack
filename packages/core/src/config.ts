@@ -52,8 +52,7 @@ function buildConfigSchema(kinds: readonly SourceKind[]): z.ZodType<TackConfig> 
         maxOutputBytes: z.number().int().positive().optional(),
         maxToolCalls: z.number().int().positive().optional(),
         maxToolRequestBytes: z.number().int().positive().optional(),
-        maxToolResponseBytes: z.number().int().positive().optional(),
-        maxInlineResultBytes: z.number().int().positive().optional()
+        maxToolResponseBytes: z.number().int().positive().optional()
       })
       .optional(),
     security: z
@@ -89,17 +88,10 @@ function buildConfigSchema(kinds: readonly SourceKind[]): z.ZodType<TackConfig> 
         dir: z.string().min(1).optional()
       })
       .optional(),
-    delegate: z
-      .object({
-        model: z.string().min(1),
-        apiKeyEnv: z.string().min(1).optional(),
-        baseUrl: z.string().url().optional(),
-        replans: z.number().int().min(0).max(3).optional()
-      })
-      .optional(),
+    storage: z.object({ root: z.string().min(1).optional() }).optional(),
     typecheck: z
       .object({
-        mode: z.enum(["error", "warn", "off"]).optional()
+        mode: z.enum(["strict", "off"]).optional()
       })
       .optional()
   }) satisfies z.ZodType<TackConfig>;

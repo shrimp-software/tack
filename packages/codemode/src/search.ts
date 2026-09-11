@@ -28,11 +28,15 @@ export interface SearchItem {
   /** Required input keys. Absent means the operation takes no required args, so
    *  you can often call it directly without `describe.tool`. */
   readonly params?: readonly string[] | undefined;
+  /** The operation's input JSON Schema — call the operation directly from this;
+   *  dropped (with `schemaTruncated: true`) when the item would exceed the page
+   *  budget. */
+  readonly inputSchema?: JsonSchema | undefined;
   readonly example: string;
   /** Present only on a keyword search — why this operation matched. */
   readonly score?: number | undefined;
   readonly matchedTokens?: readonly string[] | undefined;
-  /** Present only on `search({ namespace, types: true })`. */
+  /** Present only with `types: true` / `detail: "full"`. */
   readonly inputTypeScript?: string | undefined;
   readonly outputTypeScript?: string | undefined;
 }
@@ -97,16 +101,23 @@ export function searchOperations(
 
   // An empty query lists the whole (paginated) catalog — that's what an agent
   // calling `search({ query: "" })` to discover operations wants.
+  const queryTokenCount = query.split(" ").filter(Boolean).length;
   const matches = query.length === 0
     ? operations
       .sort((left, right) => left.fullPathString.localeCompare(right.fullPathString))
       .map((operation) => ({ operation, score: 0, matchedTokens: [] }))
     : operations
       .map((operation) => ({ operation, ...scoreOperation(operation, query) }))
-      .filter((match) => match.score > 0 && hasEnoughCoverage(query, {
-        matchedTokens: match.matchedTokens,
-        primaryMatchedTokens: match.primaryMatchedTokens
-      }))
+      // Ranked retrieval, no coverage-ratio cutoff: keep any match where a query
+      // token hit a name/path/description/example field, or where every token
+      // matched (schema-term-only). Rank by score; the page `limit` bounds the
+      // tail. A single real keyword hit on a long query is a hit, not noise —
+      // dropping those produced false "operation unavailable" conclusions.
+      .filter((match) =>
+        match.score > 0 &&
+        (match.primaryMatchedTokens.length > 0 ||
+          (queryTokenCount > 0 && match.matchedTokens.length === queryTokenCount))
+      )
       .sort((left, right) =>
         right.score === left.score
           ? left.operation.fullPathString.localeCompare(right.operation.fullPathString)
@@ -187,6 +198,7 @@ function toSearchItem(
     path: operation.fullPathString,
     ...(operation.description ? { description: operation.description } : {}),
     ...(params.length > 0 ? { params } : {}),
+    inputSchema: operation.inputSchema,
     example: operation.examples[0] ?? "",
     ...(score > 0 ? { score, matchedTokens } : {})
   };
@@ -200,6 +212,8 @@ function requiredParams(schema: JsonSchema): readonly string[] {
     : [];
 }
 
+const searchIndex = new WeakMap<TackOperation, Array<{ weight: number; primary: boolean; text: string; tokens: string[] }>>();
+
 function scoreOperation(
   operation: TackOperation,
   query: string
@@ -208,7 +222,9 @@ function scoreOperation(
   readonly matchedTokens: readonly string[];
   readonly primaryMatchedTokens: readonly string[];
 } {
-  const fields = weightedFields(operation)
+  let fields = searchIndex.get(operation);
+  if (!fields) {
+    fields = weightedFields(operation)
     .map((field) => ({
       weight: field.weight,
       primary: field.primary,
@@ -216,6 +232,8 @@ function scoreOperation(
       tokens: searchTokens(field.text)
     }))
     .filter((field) => field.text.length > 0);
+    searchIndex.set(operation, fields);
+  }
   const tokens = query.split(" ").filter(Boolean);
   const matchedTokens = new Set<string>();
   const primaryMatchedTokens = new Set<string>();
@@ -252,31 +270,6 @@ function scoreOperation(
     matchedTokens: [...matchedTokens].sort(),
     primaryMatchedTokens: [...primaryMatchedTokens].sort()
   };
-}
-
-function hasEnoughCoverage(
-  query: string,
-  match: {
-    readonly matchedTokens: readonly string[];
-    readonly primaryMatchedTokens: readonly string[];
-  }
-): boolean {
-  const tokens = query.split(" ").filter(Boolean);
-  if (tokens.length === 0) {
-    return false;
-  }
-
-  const coverage = match.matchedTokens.length / tokens.length;
-  if (coverage < (tokens.length <= 2 ? 1 : 0.6)) {
-    return false;
-  }
-
-  const primaryCoverage = match.primaryMatchedTokens.length / tokens.length;
-  if (match.primaryMatchedTokens.length === 0) {
-    return coverage === 1;
-  }
-
-  return primaryCoverage >= (tokens.length <= 2 ? 1 : 0.6);
 }
 
 interface WeightedField {

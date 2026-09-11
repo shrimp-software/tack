@@ -319,7 +319,8 @@ await tools.search({ query: "two" });
     expect(result.ok).toBe(false);
     expect(result.error).toMatchObject({
       phase: "runtime",
-      message: expect.stringContaining("Tool bridge response exceeded")
+      code: "response_too_large",
+      message: expect.stringContaining("over the 100-byte sandbox limit")
     });
   });
 

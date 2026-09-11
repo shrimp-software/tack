@@ -3,13 +3,13 @@ import { appendFile, mkdir, readFile, stat } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { Command } from "commander";
 import {
-  createAnthropicPlanner,
   listenTackMcpHttp,
   serveTackMcpStdio,
-  type DelegateOptions
 } from "@cbxss/tack-agent";
 import {
   createExecutionEngine,
+  ExecutionHost,
+  publicExecution,
   formatTraceLine,
   formatTypeDiagnostics,
   isOperationAllowed,
@@ -65,7 +65,7 @@ const DEFAULT_DISCOVERY_CACHE_PATH = ".tack/discovery-cache.json";
 program
   .name("tack")
   .description("Compile MCP tools into agent-friendly SDKs and code-mode tools")
-  .version("0.1.0");
+  .version("2.0.0");
 
 program
   .command("init")
@@ -236,10 +236,11 @@ program
   .option("-c, --config <path>", "config path", DEFAULT_CONFIG_PATH)
   .option("--timeout-ms <ms>", "execution timeout override")
   .option("--json", "print the complete execution envelope")
+  .option("--typecheck <mode>", "optional semantic checking: strict or off", "off")
   .option("--quiet", "do not stream the live tool-call trace to stderr")
   .action(async (
     code: string | undefined,
-    options: { file?: string; config: string; timeoutMs?: string; json?: boolean; quiet?: boolean }
+    options: { file?: string; config: string; timeoutMs?: string; json?: boolean; quiet?: boolean; typecheck: string }
   ) =>
     run(async () => {
       const source = await resolveExecutionSource(code, options.file);
@@ -258,7 +259,9 @@ program
       const policy = createOperationPolicy(config);
       const onAuditEvent = createAuditSink(config);
       const typecheck = createTypecheckOptions(config, manifest, policy);
+      const host = new ExecutionHost({ root: workspaceStateRoot(config, options.config) });
       const engine = createExecutionEngine({
+        host,
         manifest,
         runtime,
         codeRuntime: createCodeRuntime(runtimeConfig),
@@ -269,12 +272,14 @@ program
       });
 
       try {
-        const result = await engine.execute(source);
+        if (!["strict", "off"].includes(options.typecheck)) throw new Error("typecheck must be strict or off");
+        const result = await engine.execute(source, { typecheck: options.typecheck as "strict" | "off" });
         printExecutionResult(result, Boolean(options.json));
         if (!result.ok) {
           process.exitCode = 1;
         }
       } finally {
+        await host.close();
         await runtime.close();
       }
     })
@@ -494,15 +499,14 @@ program
       const codeRuntime = createCodeRuntime(config);
       const policy = createOperationPolicy(config);
       const onAuditEvent = createAuditSink(config);
-      const delegate = createDelegateOptions(config);
       const typecheck = createTypecheckOptions(config, manifest, policy);
       const handle = serveTackMcpStdio({
+        stateRoot: workspaceStateRoot(config, options.config),
         manifest,
         runtime,
         codeRuntime,
         ...(policy ? { policy } : {}),
         ...(onAuditEvent ? { onAuditEvent } : {}),
-        ...(delegate ? { delegate } : {}),
         ...(typecheck ? { typecheck } : {})
       });
 
@@ -528,6 +532,7 @@ program
       const onAuditEvent = createAuditSink(config);
       const typecheck = createTypecheckOptions(config, manifest, policy);
       const handle = await listenTackMcpHttp({
+        ...(users.length ? { stateRoot: workspaceStateRoot(config, options.config) } : {}),
         manifest,
         runtime,
         codeRuntime,
@@ -567,6 +572,7 @@ program
       const onAuditEvent = createAuditSink(config);
       const typecheck = createTypecheckOptions(config, manifest, policy);
       const handle = await listenTackHttpService({
+        stateRoot: workspaceStateRoot(config, options.config),
         manifest,
         runtime,
         codeRuntime,
@@ -664,51 +670,18 @@ function createOperationPolicy(config: TackConfig): OperationPolicy | undefined 
   };
 }
 
-function createDelegateOptions(config: TackConfig): DelegateOptions | undefined {
-  const delegate = config.delegate;
-  if (!delegate?.model) {
-    return undefined;
-  }
-  // The `delegate` tool is experimental and not ready for general use. It stays
-  // unregistered unless explicitly opted into via TACK_DELEGATE_EXPERIMENTAL.
-  if (!process.env.TACK_DELEGATE_EXPERIMENTAL) {
-    return undefined;
-  }
-  const apiKeyEnv = delegate.apiKeyEnv ?? "ANTHROPIC_API_KEY";
-  const apiKey = process.env[apiKeyEnv];
-  if (!apiKey) {
-    console.warn(
-      `[tack] delegate is configured (model ${delegate.model}) but ${apiKeyEnv} is not set; ` +
-        "the delegate tool will not be registered."
-    );
-    return undefined;
-  }
-  return {
-    planner: createAnthropicPlanner({
-      model: delegate.model,
-      apiKey,
-      ...(delegate.baseUrl ? { baseUrl: delegate.baseUrl } : {})
-    }),
-    ...(delegate.replans !== undefined ? { replans: delegate.replans } : {})
-  };
-}
-
-/**
- * Build the pre-run typechecker. On by default (`mode: "error"`); a `typecheck`
- * block in the config can set `warn`/`off`. Any failure to construct the checker
- * degrades to "off" with a warning — a missing checker never blocks execution.
- */
+/** Construct the checker for explicit strict requests. */
 function createTypecheckOptions(
   config: TackConfig,
   manifest: TackManifest,
   policy: OperationPolicy | undefined
 ): CreateExecutionEngineOptions["typecheck"] {
-  const mode = config.typecheck?.mode ?? "error";
+  const mode = config.typecheck?.mode ?? "strict";
   if (mode === "off") {
     return undefined;
   }
   try {
-    return { checker: createTypeChecker({ manifest, ...(policy ? { policy } : {}) }), mode };
+    return { checker: createTypeChecker({ manifest, ...(policy ? { policy } : {}) }), mode: "error" };
   } catch (error) {
     console.warn(`[tack] typecheck unavailable, running without it: ${error instanceof Error ? error.message : error}`);
     return undefined;
@@ -789,8 +762,7 @@ function createCodeRuntime(config: TackConfig) {
     ...(config.runtime?.maxOutputBytes ? { maxOutputBytes: config.runtime.maxOutputBytes } : {}),
     ...(config.runtime?.maxToolCalls ? { maxToolCalls: config.runtime.maxToolCalls } : {}),
     ...(config.runtime?.maxToolRequestBytes ? { maxToolRequestBytes: config.runtime.maxToolRequestBytes } : {}),
-    ...(config.runtime?.maxToolResponseBytes ? { maxToolResponseBytes: config.runtime.maxToolResponseBytes } : {}),
-    ...(config.runtime?.maxInlineResultBytes ? { maxInlineResultBytes: config.runtime.maxInlineResultBytes } : {})
+    ...(config.runtime?.maxToolResponseBytes ? { maxToolResponseBytes: config.runtime.maxToolResponseBytes } : {})
   };
 
   return config.runtime?.type === "workerd"
@@ -834,7 +806,7 @@ async function resolveExecutionSource(
 
 function printExecutionResult(result: ExecutionResult, json: boolean): void {
   if (json) {
-    console.log(JSON.stringify(result, null, 2));
+    console.log(JSON.stringify(publicExecution(result), null, 2));
     return;
   }
 
@@ -888,4 +860,8 @@ function waitForShutdown(): Promise<void> {
     process.once("SIGINT", resolve);
     process.once("SIGTERM", resolve);
   });
+}
+
+function workspaceStateRoot(config: TackConfig, configPath: string): string {
+  return resolve(dirname(resolve(configPath)), config.storage?.root ?? ".tack/state");
 }

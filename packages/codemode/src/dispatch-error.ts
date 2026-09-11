@@ -2,7 +2,8 @@
 export const TOOL_DISPATCH_CODES = [
   "downstream_error",
   "tool_timeout",
-  "cancelled"
+  "cancelled",
+  "response_too_large"
 ] as const;
 
 export type ToolDispatchCode = typeof TOOL_DISPATCH_CODES[number];

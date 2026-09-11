@@ -1,3 +1,4 @@
+import type { UpstreamOutcome } from "@cbxss/tack-core";
 import type { ToolDispatchCode } from "./dispatch-error.js";
 
 export interface ToolInvokeInput {
@@ -9,8 +10,11 @@ export interface ToolInvokeInput {
 export interface ToolCallOutput {
   readonly ok: boolean;
   readonly data?: unknown;
-  readonly text: string;
-  readonly raw?: unknown;
+  readonly responseId?: string | null;
+  /** A compact type-only skeleton of `data` — present on a successful call so a
+   *  cell can see the layout without guessing property paths. */
+  readonly dataShape?: unknown;
+  readonly upstreamOutcome?: UpstreamOutcome;
   readonly error?: {
     readonly code: ToolErrorCode;
     readonly message: string;
@@ -23,6 +27,7 @@ export type ToolErrorCode =
   | "operation_denied"
   | "tool_error"
   | ToolDispatchCode
+  | "input_validation_failed" | "validation_unavailable" | "output_validation_failed" | "response_persistence_failed"
   | "internal_error";
 
 export interface ToolInvoker {
@@ -44,9 +49,13 @@ export type ExecuteErrorCode =
   | "execution_timeout";
 
 export interface ExecutionResult {
+  readonly receiptId?: string | undefined;
+  readonly responseId?: string | undefined;
   readonly executionId?: string | undefined;
   readonly ok: boolean;
   readonly result?: unknown;
+  /** Set when `result` was clipped to fit the model/wire budget. */
+  readonly resultTruncated?: boolean | undefined;
   readonly emitted: readonly unknown[];
   readonly logs: readonly string[];
   readonly trace?: ExecutionTrace | undefined;
@@ -71,15 +80,6 @@ export interface TypeDiagnostic {
   readonly category: "error" | "warning";
 }
 
-export interface TypeCheckContext {
-  /**
-   * Session bindings already in scope from earlier cells (ordinary names + `$N`
-   * / `$_` ref identifiers). Declared to the checker so a cell referencing them
-   * isn't flagged as using an undefined name.
-   */
-  readonly scopeNames?: readonly string[] | undefined;
-}
-
 export interface TypeCheckOutcome {
   readonly diagnostics: readonly TypeDiagnostic[];
   /** True when the checker could not run (e.g. its language service threw). The
@@ -93,7 +93,7 @@ export interface TypeCheckOutcome {
  * injected into `createExecutionEngine`; `@cbxss/tack-codemode` never imports it.
  */
 export interface TypeChecker {
-  check(code: string, context?: TypeCheckContext): Promise<TypeCheckOutcome>;
+  check(code: string): Promise<TypeCheckOutcome>;
 }
 
 export interface ExecutionTrace {
@@ -110,7 +110,7 @@ export interface ExecutionTrace {
 
 export interface BuiltinTraceEvent {
   readonly type: "builtin_call";
-  readonly path: "search" | "describe.tool";
+  readonly path: "search" | "describe.tool" | "guidance.read";
   readonly ok: boolean;
   readonly durationMs: number;
   readonly error?: string | undefined;
@@ -130,6 +130,7 @@ export interface OperationStartTraceEvent {
 }
 
 export interface OperationTraceEvent {
+  readonly upstreamOutcome?: UpstreamOutcome | undefined;
   readonly type: "tool_call";
   readonly timestamp: string;
   readonly executionId?: string | undefined;
@@ -152,63 +153,10 @@ export interface CodeRuntimeExecuteInput {
   readonly toolsPrelude: string;
 }
 
-/**
- * A large value a cell produced instead of returning it inline. It stays in the
- * session under `ref` (usable as a bare identifier in later cells); `deref`
- * retrieves it, paginated.
- */
-export interface TackRef {
-  readonly __tackRef: string;
-  readonly type: string;
-  readonly preview: unknown;
-}
-
-export interface DerefResult {
-  readonly ok: boolean;
-  readonly value?: unknown;
-  readonly error?: string;
-  /** True when an array ref was sliced by `offset`/`limit`. */
-  readonly truncated?: boolean;
-}
-
-export interface DerefOptions {
-  readonly offset?: number | undefined;
-  readonly limit?: number | undefined;
-}
-
-/**
- * A long-lived runtime context. Successive {@link CodeSession.exec} calls share
- * one scope — top-level `const`/`let`/`function`/`class` from one cell are
- * visible to the next — until {@link CodeSession.close}.
- */
-export interface CodeSession {
-  exec(input: CodeRuntimeExecuteInput, signal?: AbortSignal): Promise<ExecutionResult>;
-  /** Retrieve a value retained as a {@link TackRef} by an earlier cell. */
-  deref?(ref: string, options?: DerefOptions): Promise<DerefResult>;
-  /** Names currently in scope (bindings + `$N`/`$_` refs) — for the typechecker. */
-  scope?(): { readonly names: readonly string[] };
-  close(): Promise<void>;
-}
-
-export function isTackRef(value: unknown): value is TackRef {
-  return (
-    typeof value === "object" &&
-    value !== null &&
-    typeof (value as { __tackRef?: unknown }).__tackRef === "string"
-  );
-}
-
-export interface CodeSessionOptions {
-  /** Wall-clock budget across all cells; the session rejects `exec` once exceeded. */
-  readonly maxLifetimeMs?: number;
-}
-
 export interface CodeRuntime {
   readonly name: string;
   readonly isolation: "none" | "vm" | "process";
   readonly timeoutMs?: number;
   readonly toolTimeoutMs?: number;
   execute(input: CodeRuntimeExecuteInput, signal?: AbortSignal): Promise<ExecutionResult>;
-  /** Present only on runtimes that support stateful sessions (QuickJS). */
-  createSession?(options?: CodeSessionOptions): Promise<CodeSession>;
 }

@@ -95,7 +95,7 @@ async function handleHostRequest(
     try {
       result = await options.invoker.invoke({
         path,
-        args: (body as Record<string, unknown>)["args"] ?? {},
+        args: (body as Record<string, unknown>)["args"] === undefined ? {} : (body as Record<string, unknown>)["args"],
         signal: options.signal
       });
     } finally {
@@ -167,7 +167,8 @@ function writeJsonLimited(
   if (Buffer.byteLength(text) > maxBytes) {
     writeJson(response, 200, {
       ok: false,
-      error: `Tool bridge response exceeded ${maxBytes} bytes`
+      code: "response_too_large",
+      error: `Downstream call succeeded but its response is ${Buffer.byteLength(text)} bytes, over the ${maxBytes}-byte sandbox limit. Narrow the upstream query — a smaller time window or an added filter — and retry.`
     });
     return;
   }

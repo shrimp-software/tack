@@ -1,0 +1,12 @@
+{
+  "id": "grafana-healthy-control",
+  "title": "Avoid diagnosing healthy batch load as an outage",
+  "prompt": "An operator saw a high search-service CPU period during the last 24 hours of the Instapix synthetic dataset and suspects an outage. Investigate with the connected tools. Locate an elevated CPU window, compare search request error ratio and latency during and outside it, inspect relevant logs, and decide whether the available evidence supports customer impact. Do not infer an outage from CPU alone or invent a change event.",
+  "expectations": [
+    "Finds a search CPU peak.",
+    "Checks error ratio and latency in the same region and interval.",
+    "Uses healthy observations as a control.",
+    "Does not invent an incident, causal deployment or customer impact.",
+    "Clearly distinguishes elevated utilization from demonstrated service degradation."
+  ]
+}

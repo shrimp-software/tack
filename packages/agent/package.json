@@ -1,6 +1,6 @@
 {
   "name": "@cbxss/tack-agent",
-  "version": "1.0.1",
+  "version": "2.0.0",
   "type": "module",
   "exports": {
     ".": {
@@ -17,15 +17,15 @@
     "test": "vitest run --passWithNoTests"
   },
   "dependencies": {
-    "@cbxss/tack-codemode": "1.0.0",
-    "@cbxss/tack-core": "1.0.0",
+    "@cbxss/tack-codemode": "2.0.0",
+    "@cbxss/tack-core": "2.0.0",
     "@modelcontextprotocol/server": "2.0.0-beta.5",
     "zod": "^4.4.3"
   },
   "devDependencies": {
-    "@cbxss/tack-runtime-quickjs": "1.0.0",
-    "@cbxss/tack-sources": "1.0.1",
-    "@cbxss/tack-typecheck": "1.0.0",
+    "@cbxss/tack-runtime-quickjs": "2.0.0",
+    "@cbxss/tack-sources": "2.0.0",
+    "@cbxss/tack-typecheck": "2.0.0",
     "@modelcontextprotocol/client": "2.0.0-beta.5",
     "typescript": "^7.0.2",
     "vitest": "^4.1.10"

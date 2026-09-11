@@ -7,15 +7,14 @@ import {
 import type { CodeRuntime, OperationPolicy, ToolAuditEvent } from "@cbxss/tack-codemode";
 
 import { createTackAgentServer, type CreateTackAgentServerOptions } from "./server.js";
-import type { DelegateOptions } from "./delegate.js";
 
 export interface ServeTackMcpStdioOptions {
+  readonly stateRoot?: string | undefined;
   readonly manifest: TackManifest;
   readonly runtime: TackRuntime;
   readonly codeRuntime: CodeRuntime;
   readonly policy?: OperationPolicy | undefined;
   readonly onAuditEvent?: ((event: ToolAuditEvent) => void | Promise<void>) | undefined;
-  readonly delegate?: DelegateOptions | undefined;
   readonly typecheck?: CreateTackAgentServerOptions["typecheck"];
 }
 
@@ -34,16 +33,15 @@ function normalizeServeOptions(
   const codeRuntime = ownField(options, "codeRuntime") as CodeRuntime;
   const policy = ownField(options, "policy") as OperationPolicy | undefined;
   const onAuditEvent = ownField(options, "onAuditEvent") as ServeTackMcpStdioOptions["onAuditEvent"];
-  const delegate = ownField(options, "delegate") as ServeTackMcpStdioOptions["delegate"];
   const typecheck = ownField(options, "typecheck") as ServeTackMcpStdioOptions["typecheck"];
 
   return {
+    stateRoot: ownField<string>(options, "stateRoot"),
     manifest,
     runtime,
     codeRuntime,
     ...(policy ? { policy } : {}),
     ...(onAuditEvent ? { onAuditEvent } : {}),
-    ...(delegate ? { delegate } : {}),
     ...(typecheck ? { typecheck } : {})
   };
 }

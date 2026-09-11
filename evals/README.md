@@ -57,3 +57,7 @@ Or point Codex at an HTTP MCP server:
 
 `tack.config.json` must point at a real upstream MCP server (e.g. Grafana MCP).
 Kibana-specific setup lives in `evals/kibana/`.
+
+A self-contained synthetic Grafana downstream for an Instagram-like app lives in
+[`grafana/`](grafana/README.md), with correlated metrics, logs, dashboards and
+incident investigation cases. Run `bun run eval:grafana:config` to configure Tack.

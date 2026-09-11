@@ -5,12 +5,12 @@ import {
   createExecutionEngine,
   createExecuteDescription,
   createTackToolInvoker,
+  describeShape,
   describeTool,
   findGuide,
   formatTraceLine,
   isOperationAllowed,
   isToolDispatchCode,
-  isTackRef,
   attachTypeScript,
   CodeRuntimeTimeoutError,
   normalizeDescribeToolInput,
@@ -42,20 +42,22 @@ describe("codemode operation helpers", () => {
   it("keeps the execute description lean, with the how-to behind findGuide", () => {
     const description = createExecuteDescription(grafanaManifest());
 
-    expect(description).toContain("Scope persists across `execute` calls");
-    expect(description).toContain('guide({ name: "execute" })');
+    expect(description).toContain("Every call runs fresh");
+    expect(description).toContain("tools.guidance.read");
     expect(description).toContain("## Available namespaces");
     expect(description).toContain("- `grafana`");
     // the long-form how-to is not paid for on every session
     expect(description).not.toContain("## Workflow");
     expect(description).not.toContain("ToolFile");
+    // the removed saved-response surface is not advertised
+    expect(description).not.toContain("responses.");
 
     const guide = findGuide("execute", grafanaManifest());
-    expect(guide?.body).toContain("## Workflow");
-    expect(guide?.body).toContain("__tackRef");
-    expect(guide?.body).toContain("ToolFile");
+    expect(guide?.body).toContain("response_too_large");
+    expect(guide?.body).toContain("Every call runs fresh");
+    expect(guide?.body).toContain("dataShape");
     expect(guide?.body).toContain("## Available namespaces");
-    expect(guide?.body).toContain("search({ namespace, types: true })");
+    expect(guide?.body).not.toContain("responses.read");
     expect(findGuide("nope", grafanaManifest())).toBeUndefined();
   });
 
@@ -66,10 +68,10 @@ describe("codemode operation helpers", () => {
     expect(search.items[0]).toMatchObject({
       path: "grafana.alerting.rules.list",
       example: "await tools.grafana.alerting.rules.list()",
+      inputSchema: expect.objectContaining({ type: "object" }),
       score: expect.any(Number),
       matchedTokens: ["list", "rules"]
     });
-    expect(search.items[0]).not.toHaveProperty("inputSchema");
     expect(search.items[0]).not.toHaveProperty("serverId");
 
     const described = await describeTool(manifest, {
@@ -160,9 +162,11 @@ describe("codemode operation helpers", () => {
     expect(enumerated.total).toBe(3);
     expect(enumerated.items[0]).toMatchObject({ path: "grafana.alerting.rules.get" });
     expect(enumerated.items[0]).not.toHaveProperty("score");
-    expect(searchOperations(manifest, { query: "datasources list" }).items.map((item) => item.path)).toEqual([
-      "grafana.datasources.list"
-    ]);
+    // ranked retrieval: the exact multi-token match ranks first; other `.list`
+    // ops may follow (broad recall, no coverage-ratio cutoff).
+    const dsList = searchOperations(manifest, { query: "datasources list" });
+    expect(dsList.items[0]).toMatchObject({ path: "grafana.datasources.list" });
+    expect(dsList.items.map((item) => item.path)).toContain("grafana.datasources.list");
   });
 
   it("normalizes search and describe inputs without invoking getters", () => {
@@ -278,10 +282,7 @@ describe("codemode operation helpers", () => {
     });
 
     const index = await invoker.invoke({ path: "search", args: { query: "" } });
-    expect(index).toEqual({
-      namespaces: [{ namespace: "grafana", serverId: "grafana", operations: 3 }],
-      total: 3
-    });
+    expect(index).toMatchObject({ items: [{ kind: "namespace", path: "grafana", operations: 3 }], total: 1 });
 
     const ops = await invoker.invoke({ path: "search", args: { query: "", namespace: "grafana" } });
     expect(ops).toMatchObject({ total: 3, items: expect.any(Array) });
@@ -317,16 +318,8 @@ describe("codemode operation helpers", () => {
         error: { message: "Unknown Tack operation: " }
       });
     await expect(invoker.invoke(poisonedArgsCall as Parameters<typeof invoker.invoke>[0]))
-      .resolves
-      .toMatchObject({
-        ok: true
-      });
-    expect(calls).toEqual([
-      {
-        toolId: "grafana.alerting_manage_rules",
-        args: { operation: "get" }
-      }
-    ]);
+      .resolves.toMatchObject({ ok: false, upstreamOutcome: "not_started", error: { code: "input_validation_failed" } });
+    expect(calls).toEqual([]);
   });
 
   it("invokes without reading live option fields after creation", async () => {
@@ -808,16 +801,6 @@ describe("codemode operation helpers", () => {
   });
 });
 
-describe("isTackRef", () => {
-  it("recognizes a ref marker and nothing else", () => {
-    expect(isTackRef({ __tackRef: "$1", type: "Array(9)", preview: [] })).toBe(true);
-    expect(isTackRef({ __tackRef: 1 })).toBe(false);
-    expect(isTackRef({ ref: "$1" })).toBe(false);
-    expect(isTackRef([])).toBe(false);
-    expect(isTackRef(null)).toBe(false);
-  });
-});
-
 describe("formatTraceLine", () => {
   it("renders start, success, denied and error events", () => {
     expect(formatTraceLine({
@@ -860,6 +843,37 @@ describe("formatTraceLine", () => {
       ok: true,
       durationMs: 3
     })).toBe("← search ok (3ms)");
+  });
+});
+
+describe("describeShape", () => {
+  it("returns a compact type-only skeleton, bounded in depth and size", () => {
+    const shape = describeShape({
+      data: { resultType: "matrix", result: [{ metric: { region: "us" }, values: [[1, "x"]] }] },
+      totalMatching: 240,
+      truncated: false,
+    });
+    expect(shape).toEqual({
+      data: {
+        resultType: "string",
+        result: { array: 1, of: "object{metric,values}" },
+      },
+      totalMatching: "number",
+      truncated: "boolean",
+    });
+    // a deeper on-demand view is available via an explicit maxDepth
+    expect(describeShape({ a: { b: { c: { d: 1 } } } }, 5)).toEqual({ a: { b: { c: { d: "number" } } } });
+    expect(Buffer.byteLength(JSON.stringify(shape))).toBeLessThan(400);
+  });
+
+  it("degrades gracefully on breadth, depth and cycles", () => {
+    const wide: Record<string, unknown> = {};
+    for (let i = 0; i < 40; i += 1) wide[`k${i}`] = i;
+    expect((describeShape(wide) as Record<string, unknown>)["…"]).toBe("16 more");
+
+    const cyclic: Record<string, unknown> = {};
+    cyclic.self = cyclic;
+    expect(() => describeShape(cyclic)).not.toThrow();
   });
 });
 
@@ -919,15 +933,15 @@ describe("execution engine typecheck", () => {
   function fakeChecker(outcome: {
     diagnostics?: typeof oneDiagnostic;
     skipped?: boolean;
-    onCall?: (code: string, ctx?: { scopeNames?: readonly string[] }) => void;
+    onCall?: (code: string) => void;
   }) {
     let calls = 0;
     return {
       calls: () => calls,
       checker: {
-        check: async (code: string, ctx?: { scopeNames?: readonly string[] }) => {
+        check: async (code: string) => {
           calls += 1;
-          outcome.onCall?.(code, ctx);
+          outcome.onCall?.(code);
           return {
             diagnostics: outcome.diagnostics ?? [],
             ...(outcome.skipped ? { skipped: true, skipReason: "forced" } : {})
@@ -948,51 +962,28 @@ describe("execution engine typecheck", () => {
       typecheck: { checker: fc.checker, mode: "error" }
     });
 
-    const result = await engine.execute("return x;");
+    const result = await engine.execute("return x;", { typecheck: "strict" });
 
     expect(result.ok).toBe(false);
     expect(result.error?.phase).toBe("typecheck");
-    expect(result.error?.message).toContain("TS2304");
+    expect(result.typeDiagnostics?.[0]?.code).toBe("TS2304");
     expect(result.typeDiagnostics).toEqual(oneDiagnostic);
     expect(ran()).toBe(false);
     expect(calls).toEqual([]);
   });
 
-  it("runs and attaches diagnostics in warn mode", async () => {
-    const calls: Array<{ toolId: string; args: unknown }> = [];
+  it("defaults checking off even when a checker is configured", async () => {
     const { runtime, ran } = recordingRuntime();
     const fc = fakeChecker({ diagnostics: oneDiagnostic });
-    const engine = createExecutionEngine({
-      manifest: grafanaManifest(),
-      runtime: fakeRuntime(calls),
-      codeRuntime: runtime,
-      typecheck: { checker: fc.checker, mode: "warn" }
-    });
-
-    const result = await engine.execute("return x;");
-
-    expect(result.ok).toBe(true);
-    expect(result.result).toBe("ran");
-    expect(result.typeDiagnostics).toEqual(oneDiagnostic);
-    expect(ran()).toBe(true);
-    expect(calls).toHaveLength(1);
+    const engine = createExecutionEngine({ manifest: grafanaManifest(), runtime: fakeRuntime([]), codeRuntime: runtime, typecheck: { checker: fc.checker, mode: "error" } });
+    try { expect((await engine.execute("return x;")).ok).toBe(true); expect(fc.calls()).toBe(0); expect(ran()).toBe(true); } finally { await engine.close(); }
   });
 
-  it("runs normally when the checker skips", async () => {
+  it("fails closed when explicit strict checking is unavailable", async () => {
     const { runtime, ran } = recordingRuntime();
-    const fc = fakeChecker({ diagnostics: oneDiagnostic, skipped: true });
-    const engine = createExecutionEngine({
-      manifest: grafanaManifest(),
-      runtime: fakeRuntime([]),
-      codeRuntime: runtime,
-      typecheck: { checker: fc.checker, mode: "error" }
-    });
-
-    const result = await engine.execute("return x;");
-
-    expect(result.ok).toBe(true);
-    expect(result.typeDiagnostics).toBeUndefined();
-    expect(ran()).toBe(true);
+    const fc = fakeChecker({ skipped: true });
+    const engine = createExecutionEngine({ manifest: grafanaManifest(), runtime: fakeRuntime([]), codeRuntime: runtime, typecheck: { checker: fc.checker, mode: "error" } });
+    try { expect((await engine.execute("return x;", { typecheck: "strict" })).ok).toBe(false); expect(ran()).toBe(false); } finally { await engine.close(); }
   });
 
   it("skips the checker entirely for a per-call typecheck: off", async () => {
@@ -1011,30 +1002,4 @@ describe("execution engine typecheck", () => {
     expect(fc.calls()).toBe(0);
   });
 
-  it("passes session scope names to the checker", async () => {
-    let seenCtx: { scopeNames?: readonly string[] } | undefined;
-    const fc = fakeChecker({ onCall: (_code, ctx) => { seenCtx = ctx; } });
-    const codeRuntime: CodeRuntime = {
-      name: "test",
-      isolation: "none",
-      execute: async () => ({ ok: true, result: "x", emitted: [], logs: [] }),
-      createSession: async () => ({
-        exec: async () => ({ ok: true, result: "cell", emitted: [], logs: [] }),
-        scope: () => ({ names: ["prev", "$1"] }),
-        close: async () => {}
-      })
-    };
-    const engine = createExecutionEngine({
-      manifest: grafanaManifest(),
-      runtime: fakeRuntime([]),
-      codeRuntime,
-      typecheck: { checker: fc.checker, mode: "warn" }
-    });
-
-    const session = await engine.createSession();
-    await session.exec("return prev;");
-
-    expect(seenCtx).toEqual({ scopeNames: ["prev", "$1"] });
-    expect(session.scope().names).toEqual(["prev", "$1"]);
-  });
 });

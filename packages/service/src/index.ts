@@ -2,12 +2,15 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import { timingSafeEqual } from "node:crypto";
 import {
   ownField,
+  snapshotManifest,
   sanitizeData,
   type TackManifest,
   type TackRuntime
 } from "@cbxss/tack-core";
 import {
   createExecutionEngine,
+  ExecutionHost,
+  publicExecution,
   searchOperations,
   type CodeRuntime,
   type CreateExecutionEngineOptions,
@@ -29,6 +32,7 @@ export interface ServiceUser {
 }
 
 export interface CreateTackHttpServiceOptions {
+  readonly stateRoot?: string | undefined;
   readonly manifest: TackManifest;
   readonly runtime: TackRuntime;
   readonly codeRuntime: CodeRuntime;
@@ -76,6 +80,7 @@ interface RateWindow {
 const DEFAULT_MAX_REQUEST_BYTES = 1_000_000;
 
 interface ServiceContext {
+  readonly host: ExecutionHost;
   readonly manifest: TackManifest;
   readonly runtime: TackRuntime;
   readonly codeRuntime: CodeRuntime;
@@ -85,6 +90,8 @@ interface ServiceContext {
   readonly onAuditEvent?: CreateTackHttpServiceOptions["onAuditEvent"] | undefined;
   readonly typecheck?: CreateExecutionEngineOptions["typecheck"];
 }
+
+const serviceHosts = new WeakMap<Server, ExecutionHost>();
 
 function createTackHttpService(
   options: CreateTackHttpServiceOptions
@@ -103,9 +110,11 @@ function createTackHttpService(
   }
 
   const limiter = createRateLimiter(normalizeRateLimit(ownField(options, "rateLimit")));
-  return createServer((request, response) => {
+  const server = createServer((request, response) => {
     void handleRequest(context, limiter, request, response);
   });
+  serviceHosts.set(server, context.host);
+  return server;
 }
 
 export function listenTackHttpService(
@@ -125,7 +134,7 @@ export function listenTackHttpService(
       resolve({
         server,
         url: `http://${host}:${actualPort}`,
-        close: () => closeServer(server)
+        close: async () => { await closeServer(server); await serviceHosts.get(server)?.close(); }
       });
     });
   });
@@ -181,6 +190,7 @@ async function handleRequest(
       }
 
       const engine = createExecutionEngine({
+        host: context.host, responseOwner: user.id,
         manifest: context.manifest,
         runtime: context.runtime,
         codeRuntime: context.codeRuntime,
@@ -188,8 +198,10 @@ async function handleRequest(
         ...(onAuditEvent ? { onAuditEvent } : {}),
         ...(context.typecheck ? { typecheck: context.typecheck } : {})
       });
-      const result = await engine.execute(code);
-      writeJson(response, result.ok ? 200 : 400, result);
+      const mode = ownField(body, "typecheck");
+      if (mode !== undefined && mode !== "strict" && mode !== "off") { writeJson(response, 400, { error: "invalid_typecheck" }); return; }
+      const result = await engine.execute(code, { typecheck: mode });
+      writeJson(response, result.ok ? 200 : 400, publicExecution(result));
       return;
     }
 
@@ -215,7 +227,8 @@ function normalizeServiceContext(options: CreateTackHttpServiceOptions): Service
   const onAuditEvent = ownField<CreateTackHttpServiceOptions["onAuditEvent"]>(options, "onAuditEvent");
   const typecheck = ownField<CreateTackHttpServiceOptions["typecheck"]>(options, "typecheck");
   return {
-    manifest: ownField<TackManifest>(options, "manifest") as TackManifest,
+    host: new ExecutionHost(ownField<string>(options, "stateRoot") ? { root: ownField<string>(options, "stateRoot")! } : {}),
+    manifest: snapshotManifest(ownField<TackManifest>(options, "manifest") as TackManifest),
     runtime: ownField<TackRuntime>(options, "runtime") as TackRuntime,
     codeRuntime: ownField<CodeRuntime>(options, "codeRuntime") as CodeRuntime,
     users: optionUsers(options).map(normalizeServiceUser),

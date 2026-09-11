@@ -2,38 +2,10 @@ import { CODE_MODE_RESULT_TS } from "@cbxss/tack-core";
 
 import { buildMethodTree, renderInterfaceTree, type MethodLike } from "./method-tree.js";
 
-/**
- * Namespace keys that would collide with a builtin on the `tools` object
- * (`tools.call`, `tools.search`, `tools.describe`, `emit` is a free function,
- * `then` is trapped to `undefined`). If a real namespace is named one of these
- * the builtin signature is dropped for that key and a `// note:` is emitted —
- * the namespace wins, matching runtime reality.
- */
-const RESERVED_TOOL_KEYS: ReadonlySet<string> = new Set(["call", "search", "describe", "then", "emit"]);
+import { BUILTIN_CONTRACTS, builtinTypeScript, RESERVED_TOOL_KEYS } from "@cbxss/tack-core";
 
-/** The `TackSearchResult` alias referenced by the `tools.search` builtin signature. */
-export const SEARCH_RESULT_TS =
-  "type TackSearchResult = {\n" +
-  "  items: Array<{ path: string; description?: string; params?: string[]; example: string; score?: number }>;\n" +
-  "  total: number;\n" +
-  "  hasMore: boolean;\n" +
-  "  nextOffset: number | null;\n" +
-  "};\n";
-
-/** The `TackDescribedTool` alias referenced by the `tools.describe.tool` builtin signature. */
-export const DESCRIBED_TOOL_TS =
-  "type TackDescribedTool = {\n" +
-  "  path: string;\n" +
-  "  name: string;\n" +
-  "  description?: string;\n" +
-  "  inputSchema: unknown;\n" +
-  "  outputSchema?: unknown;\n" +
-  "  inputTypeScript: string;\n" +
-  "  outputTypeScript?: string;\n" +
-  "  typeScriptDefinitions?: string;\n" +
-  "  examples: string[];\n" +
-  "  error?: { code: string; message: string; suggestions: string[] };\n" +
-  "};\n";
+export const SEARCH_RESULT_TS = `type TackSearchResult = ${builtinTypeScript(BUILTIN_CONTRACTS.search.output)};\n`;
+export const DESCRIBED_TOOL_TS = `type TackDescribedTool = ${builtinTypeScript(BUILTIN_CONTRACTS["describe.tool"].output)};\n`;
 
 /**
  * The `declare global { const tools: {…}; function emit(…) } … export {};` block —
@@ -51,22 +23,17 @@ export function renderAmbientToolsBlock(methods: readonly MethodLike[]): string 
 
   const reservedHits = [...tree.children.keys()].filter((key) => RESERVED_TOOL_KEYS.has(key));
 
-  const builtins: ReadonlyArray<{ key: string; line: string }> = [
-    { key: "call", line: "call<T = unknown>(path: string, args?: Record<string, unknown>): Promise<CodeModeResult<T>>;" },
-    {
-      key: "search",
-      line: "search(input?: { query?: string; namespace?: string; limit?: number; offset?: number }): Promise<TackSearchResult>;"
-    },
-    { key: "describe", line: "describe: { tool(input: { path: string; types?: boolean }): Promise<TackDescribedTool> };" }
-  ];
-
-  const chunks: string[] = [];
-  if (reservedHits.length > 0) {
-    chunks.push(
-      `// note: namespace(s) ${reservedHits.map((key) => `\`${key}\``).join(", ")} shadow a \`tools\` builtin; ` +
-        "the namespace wins and the builtin signature is omitted for that key."
-    );
+  if (reservedHits.length) throw new Error(`Reserved tool namespace: ${reservedHits.join(", ")}`);
+  const nested = new Map<string, string[]>();
+  const builtins = ["call<T = unknown>(path: string, args?: Record<string, unknown>): Promise<CodeModeResult<T>>;"];
+  for (const [path, contract] of Object.entries(BUILTIN_CONTRACTS)) {
+    const [root, leaf] = path.split(".");
+    const signature = `${leaf ?? root}(input: ${builtinTypeScript(contract.input)}): Promise<${builtinTypeScript(contract.output)}>;`;
+    if (leaf) { const entries = nested.get(root!) ?? []; entries.push(signature); nested.set(root!, entries); }
+    else builtins.push(signature);
   }
+  for (const [root, entries] of nested) builtins.push(`${root}: { ${entries.join(" ")} };`);
+  const chunks: string[] = [];
 
   chunks.push(
     "declare global {",
@@ -74,11 +41,12 @@ export function renderAmbientToolsBlock(methods: readonly MethodLike[]): string 
     ...renderInterfaceTree(tree, "    ", {
       result: (method) => `CodeModeResult<${method.outputType}>`
     }),
-    ...builtins
-      .filter((builtin) => !reservedHits.includes(builtin.key))
-      .map((builtin) => `    ${builtin.line}`),
+    ...builtins.map((line) => `    ${line}`),
     "  };",
     "  function emit(value: unknown): void;",
+    "  /** Synchronous structural view of a value — no round trip. Use it to see a",
+    "   *  downstream result's layout before writing code against it. */",
+    "  function shape(value: unknown, maxDepth?: number): unknown;",
     "}",
     "",
     "export {};",

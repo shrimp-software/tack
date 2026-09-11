@@ -5,11 +5,12 @@ import { pipeline } from "node:stream/promises";
 import { createMcpHandler, type AuthInfo } from "@modelcontextprotocol/server";
 import {
   ownField,
+  snapshotManifest,
   sanitizeData,
   type TackManifest,
   type TackRuntime
 } from "@cbxss/tack-core";
-import type { CodeRuntime, OperationPolicy, ToolAuditEvent } from "@cbxss/tack-codemode";
+import { ExecutionHost, type CodeRuntime, type OperationPolicy, type ToolAuditEvent } from "@cbxss/tack-codemode";
 
 import { createTackAgentServer, type CreateTackAgentServerOptions } from "./server.js";
 
@@ -21,6 +22,7 @@ export interface HostedMcpUser {
 }
 
 export interface ServeTackMcpHttpOptions {
+  readonly stateRoot?: string | undefined;
   readonly manifest: TackManifest;
   readonly runtime: TackRuntime;
   readonly codeRuntime: CodeRuntime;
@@ -43,6 +45,7 @@ export interface TackMcpHttpHandle {
 }
 
 interface HostedMcpContext {
+  readonly host: ExecutionHost;
   readonly manifest: TackManifest;
   readonly runtime: TackRuntime;
   readonly codeRuntime: CodeRuntime;
@@ -97,6 +100,7 @@ export function listenTackMcpHttp(
         url: `http://${host}:${actualPort}${path}`,
         close: async () => {
           await Promise.allSettled([closeServer(server), handler.close()]);
+          await context.host.close();
         }
       });
     });
@@ -113,10 +117,11 @@ function createHostedMcpHandler(context: HostedMcpContext): ReturnType<typeof cr
       manifest: context.manifest,
       runtime: context.runtime,
       codeRuntime: context.codeRuntime,
+        host: context.host,
+      responseOwner: requestContext.authInfo ? `user:${requestContext.authInfo.clientId}` : "open",
       // The handler builds a fresh instance per request, so a session store here
       // could never outlive one call.
-      sessions: false,
-      ...(policy ? { policy } : {}),
+        ...(policy ? { policy } : {}),
       ...(context.onAuditEvent ? { onAuditEvent: context.onAuditEvent } : {}),
       ...(context.typecheck ? { typecheck: context.typecheck } : {})
     });
@@ -131,7 +136,10 @@ function normalizeServeOptions(options: ServeTackMcpHttpOptions): HostedMcpConte
   const policy = ownField(options, "policy") as OperationPolicy | undefined;
   const onAuditEvent = ownField(options, "onAuditEvent") as ServeTackMcpHttpOptions["onAuditEvent"];
   const typecheck = ownField(options, "typecheck") as ServeTackMcpHttpOptions["typecheck"];
+  const stateRoot = ownField<string>(options, "stateRoot");
+  if (stateRoot && (!Array.isArray(users) || users.length === 0)) throw new Error("Durable HTTP storage requires configured users");
   return {
+    host: new ExecutionHost(stateRoot ? { root: stateRoot } : {}),
     manifest,
     runtime,
     codeRuntime,

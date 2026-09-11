@@ -1,3 +1,4 @@
+import { RESERVED_TOOL_KEYS } from "./builtins.js";
 import { dedupeName, sanitizeId, toIdentifier } from "./ids.js";
 import { sanitizeData } from "./sanitize.js";
 import { manifestConnectionFor, type SourceKind } from "./source-kind.js";
@@ -61,11 +62,8 @@ export function buildManifest(
     "index",
     "tack",
     "types",
-    "call",
-    "search",
-    "describe",
     "emit",
-    "then"
+    ...RESERVED_TOOL_KEYS
   ]);
 
   for (const [serverId, serverConfig] of Object.entries(cleanConfig.servers ?? {})) {
