@@ -1,6 +1,6 @@
 {
   "name": "@cbxss/tack-service",
-  "version": "2.0.0",
+  "version": "2.1.0",
   "type": "module",
   "exports": {
     ".": {
@@ -17,12 +17,12 @@
     "test": "vitest run --passWithNoTests"
   },
   "dependencies": {
-    "@cbxss/tack-codemode": "2.0.0",
-    "@cbxss/tack-core": "2.0.0"
+    "@cbxss/tack-codemode": "2.1.0",
+    "@cbxss/tack-core": "2.1.0"
   },
   "devDependencies": {
-    "@cbxss/tack-runtime-quickjs": "2.0.0",
-    "@cbxss/tack-runtime-workerd": "2.0.0",
+    "@cbxss/tack-runtime-quickjs": "2.1.0",
+    "@cbxss/tack-runtime-workerd": "2.1.0",
     "typescript": "^7.0.2",
     "vitest": "^4.1.10"
   },

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { fakeRuntime, grafanaManifest } from "../../core/test/fixtures.js";
 
 import {
+  cleanWhitespace,
   createExecutionEngine,
   createExecuteDescription,
   createTackToolInvoker,
@@ -874,6 +875,19 @@ describe("describeShape", () => {
     const cyclic: Record<string, unknown> = {};
     cyclic.self = cyclic;
     expect(() => describeShape(cyclic)).not.toThrow();
+  });
+});
+
+describe("cleanWhitespace", () => {
+  it("collapses padded lines and blank-line runs in every string leaf", () => {
+    expect(cleanWhitespace("  Report   \n\n\n\n  line two\t\t\ttabbed  ")).toBe("Report\n\nline two tabbed");
+  });
+
+  it("recurses through arrays and objects, leaving non-strings untouched", () => {
+    expect(cleanWhitespace({ a: ["  x  ", 1, null, { b: "y  \n\n\n z" }], n: 3.5 })).toEqual({
+      a: ["x", 1, null, { b: "y\n\nz" }],
+      n: 3.5
+    });
   });
 });
 

@@ -65,7 +65,7 @@ const DEFAULT_DISCOVERY_CACHE_PATH = ".tack/discovery-cache.json";
 program
   .name("tack")
   .description("Compile MCP tools into agent-friendly SDKs and code-mode tools")
-  .version("2.0.0");
+  .version("2.1.0");
 
 program
   .command("init")
@@ -268,6 +268,7 @@ program
         ...(policy ? { policy } : {}),
         ...(onAuditEvent ? { onAuditEvent } : {}),
         ...(typecheck ? { typecheck } : {}),
+        ...(config.runtime?.normalizeWhitespace ? { normalizeWhitespace: config.runtime.normalizeWhitespace } : {}),
         ...(options.quiet ? {} : { onTrace: (event) => console.error(formatTraceLine(event)) })
       });
 
@@ -507,7 +508,8 @@ program
         codeRuntime,
         ...(policy ? { policy } : {}),
         ...(onAuditEvent ? { onAuditEvent } : {}),
-        ...(typecheck ? { typecheck } : {})
+        ...(typecheck ? { typecheck } : {}),
+        ...(config.runtime?.normalizeWhitespace ? { normalizeWhitespace: config.runtime.normalizeWhitespace } : {})
       });
 
       await waitForStdinClose();
@@ -539,7 +541,8 @@ program
         users,
         ...(policy ? { policy } : {}),
         ...(onAuditEvent ? { onAuditEvent } : {}),
-        ...(typecheck ? { typecheck } : {})
+        ...(typecheck ? { typecheck } : {}),
+        ...(config.runtime?.normalizeWhitespace ? { normalizeWhitespace: config.runtime.normalizeWhitespace } : {})
       }, {
         host: options.host ?? config.service?.host,
         port: options.port ? parsePort(options.port) : config.service?.port,
@@ -581,7 +584,8 @@ program
         ...(config.service?.maxRequestBytes ? { maxRequestBytes: config.service.maxRequestBytes } : {}),
         ...(config.service?.rateLimit ? { rateLimit: config.service.rateLimit } : {}),
         ...(onAuditEvent ? { onAuditEvent } : {}),
-        ...(typecheck ? { typecheck } : {})
+        ...(typecheck ? { typecheck } : {}),
+        ...(config.runtime?.normalizeWhitespace ? { normalizeWhitespace: config.runtime.normalizeWhitespace } : {})
       }, {
         host: options.host ?? config.service?.host,
         port: options.port ? parsePort(options.port) : config.service?.port

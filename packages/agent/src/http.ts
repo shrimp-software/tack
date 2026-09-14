@@ -30,6 +30,7 @@ export interface ServeTackMcpHttpOptions {
   readonly policy?: OperationPolicy | undefined;
   readonly onAuditEvent?: ((event: ToolAuditEvent) => void | Promise<void>) | undefined;
   readonly typecheck?: CreateTackAgentServerOptions["typecheck"];
+  readonly normalizeWhitespace?: CreateTackAgentServerOptions["normalizeWhitespace"];
 }
 
 export interface TackMcpHttpListenOptions {
@@ -53,6 +54,7 @@ interface HostedMcpContext {
   readonly policy?: OperationPolicy | undefined;
   readonly onAuditEvent?: ServeTackMcpHttpOptions["onAuditEvent"] | undefined;
   readonly typecheck?: CreateTackAgentServerOptions["typecheck"];
+  readonly normalizeWhitespace?: CreateTackAgentServerOptions["normalizeWhitespace"];
 }
 
 interface HostedMcpUserSnapshot {
@@ -123,7 +125,8 @@ function createHostedMcpHandler(context: HostedMcpContext): ReturnType<typeof cr
       // could never outlive one call.
         ...(policy ? { policy } : {}),
       ...(context.onAuditEvent ? { onAuditEvent: context.onAuditEvent } : {}),
-      ...(context.typecheck ? { typecheck: context.typecheck } : {})
+      ...(context.typecheck ? { typecheck: context.typecheck } : {}),
+      ...(context.normalizeWhitespace ? { normalizeWhitespace: context.normalizeWhitespace } : {})
     });
   });
 }
@@ -136,6 +139,7 @@ function normalizeServeOptions(options: ServeTackMcpHttpOptions): HostedMcpConte
   const policy = ownField(options, "policy") as OperationPolicy | undefined;
   const onAuditEvent = ownField(options, "onAuditEvent") as ServeTackMcpHttpOptions["onAuditEvent"];
   const typecheck = ownField(options, "typecheck") as ServeTackMcpHttpOptions["typecheck"];
+  const normalizeWhitespace = ownField(options, "normalizeWhitespace") as ServeTackMcpHttpOptions["normalizeWhitespace"];
   const stateRoot = ownField<string>(options, "stateRoot");
   if (stateRoot && (!Array.isArray(users) || users.length === 0)) throw new Error("Durable HTTP storage requires configured users");
   return {
@@ -146,7 +150,8 @@ function normalizeServeOptions(options: ServeTackMcpHttpOptions): HostedMcpConte
     users: Array.isArray(users) ? users.map(normalizeUser) : [],
     ...(policy ? { policy } : {}),
     ...(onAuditEvent ? { onAuditEvent } : {}),
-    ...(typecheck ? { typecheck } : {})
+    ...(typecheck ? { typecheck } : {}),
+    ...(normalizeWhitespace ? { normalizeWhitespace } : {})
   };
 }
 

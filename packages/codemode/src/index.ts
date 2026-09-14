@@ -4,6 +4,7 @@ export * from "./dispatch-error.js";
 export * from "./engine.js";
 export * from "./guide.js";
 export * from "./invoker.js";
+export * from "./normalize.js";
 export * from "./policy.js";
 export * from "./runtime-lifecycle.js";
 export * from "./runtime-support.js";

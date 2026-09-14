@@ -3,21 +3,20 @@ import { invokeBuiltin } from "./discovery.js";
 import { ValidationKernel, type ValidationResult } from "@cbxss/tack-validation";
 import { ExecutionHost, operationOrigin, catalogRevision } from "./host.js";
 import { describeShape } from "./data-shape.js";
-import { findGuide } from "./guide.js";
+import { cleanWhitespace } from "./normalize.js";
 import {
   findOperation,
   snapshotManifest,
   operationArgs,
   ownField,
+  type JsonSchema,
   type TackManifest,
   type TackRuntime
 } from "@cbxss/tack-core";
 
-import { describeTool, normalizeDescribeToolInput } from "./describe.js";
 import { ToolDispatchError } from "./dispatch-error.js";
 import { isOperationAllowed, type OperationPolicy } from "./policy.js";
 import { CodeRuntimeTimeoutError, errorMessage, withTimeout } from "./runtime-lifecycle.js";
-import { attachTypeScript, listNamespaces, normalizeSearchInput, searchOperations } from "./search.js";
 import type { BuiltinTraceEvent, ToolCallOutput, ToolInvoker, ToolTraceEvent } from "./types.js";
 
 export interface CreateTackToolInvokerOptions {
@@ -30,6 +29,14 @@ export interface CreateTackToolInvokerOptions {
   readonly onTraceEvent?: ((event: ToolTraceEvent) => void | Promise<void>) | undefined;
   readonly onAuditEvent?: ((event: ToolAuditEvent) => void | Promise<void>) | undefined;
   readonly responseOwner?: string | undefined;
+  /**
+   * Server ids whose downstream responses get {@link cleanWhitespace} applied
+   * to `.data` before it is validated, retained, or returned. Per-source and
+   * off by default: a source id absent from this list is never touched, so a
+   * server whose responses are code, diffs, or markdown — where whitespace
+   * carries meaning — can simply stay out of it.
+   */
+  readonly normalizeWhitespace?: readonly string[] | undefined;
 }
 
 export type ToolAuditEvent = Extract<ToolTraceEvent, { readonly type: "tool_call" }>;
@@ -53,6 +60,7 @@ interface ToolInvokerContext {
   readonly toolTimeoutMs?: number | undefined;
   readonly onTraceEvent?: CreateTackToolInvokerOptions["onTraceEvent"] | undefined;
   readonly onAuditEvent?: CreateTackToolInvokerOptions["onAuditEvent"] | undefined;
+  readonly normalizeWhitespace: ReadonlySet<string>;
 }
 
 export function createTackToolInvoker(
@@ -84,6 +92,7 @@ function normalizeToolInvokerContext(options: CreateTackToolInvokerOptions): Too
     responseOwner: ownField<string>(options, "responseOwner") ?? "local",
     manifest: snapshotManifest(ownField<TackManifest>(options, "manifest") as TackManifest),
     runtime: ownField<TackRuntime>(options, "runtime") as TackRuntime,
+    normalizeWhitespace: new Set(ownField<readonly string[]>(options, "normalizeWhitespace") ?? []),
     ...(policy ? { policy } : {}),
     ...(executionId ? { executionId } : {}),
     ...(typeof ownField<number>(options, "toolTimeoutMs") === "number" ? { toolTimeoutMs: ownField<number>(options, "toolTimeoutMs") } : {}),
@@ -195,19 +204,32 @@ async function invokeOperation(
     });
     const text = result.text();
     const parsed = result.structuredContent === undefined ? parseJsonText(text) : result.structuredContent;
-    const data = parsed === undefined ? text : parsed;
-    let outputValidation: ValidationResult | undefined;
-    if (!result.isError && operation.outputSchema) {
-      try { outputValidation = context.host ? await context.host.validate(context.responseOwner, { purpose: "output", schema: operation.outputSchema, value: data }, controller.signal) : context.validator.validate({ purpose: "output", schema: operation.outputSchema, value: data }); }
-      catch (error) { outputValidation = { status: "unavailable", validator: "none", coverage: { assertions: "not_performed", schemaSupport: "unknown", localRefs: false, remoteRefs: false, formatAssertions: false }, diagnostics: [{ code: "output_validation_unavailable", message: errorMessage(error) }] }; }
-    }
+    const rawData = parsed === undefined ? text : parsed;
+    // Cleaning only ever touches what's delivered (`data`); the retained audit
+    // evidence below (`raw`, `text`) keeps the upstream response verbatim.
+    const data = context.normalizeWhitespace.has(operation.serverId) ? cleanWhitespace(rawData) : rawData;
+    const upstreamOutcome = result.isError ? "failed" : "succeeded";
+    const outputValidation = !result.isError && operation.outputSchema
+      ? await validateOutput(context, operation.outputSchema, data, controller.signal)
+      : null;
     let response;
     let retentionError: string | undefined;
     if (context.host) {
-      try { response = await context.host.retain(context.responseOwner, data, {
-        origins: [operationOrigin(operation, manifest)], executionId: context.executionId, raw: result.raw, text,
-        upstreamOutcome: result.isError ? "failed" : "succeeded", evidence: { inputValidation: checked, args: args ?? {}, operation: operation.fullPathString, outputValidation: outputValidation ?? null }
-      }); } catch (error) {
+      try {
+        response = await context.host.retain(context.responseOwner, data, {
+          origins: [operationOrigin(operation, manifest)],
+          executionId: context.executionId,
+          raw: result.raw,
+          text,
+          upstreamOutcome,
+          evidence: {
+            inputValidation: checked,
+            args: args ?? {},
+            operation: operation.fullPathString,
+            outputValidation
+          }
+        });
+      } catch (error) {
         // Retention is an audit-evidence concern, not a delivery concern: a
         // successful upstream call still returns its data. Never replay a write.
         retentionError = `response retention failed; evidence not persisted. ${errorMessage(error)}`;
@@ -215,9 +237,10 @@ async function invokeOperation(
     }
     const responseId = response?.id ?? null;
     if (context.host && !context.host.canInvoke(context.responseOwner, operation, manifest)) {
-      return { ok: false, upstreamOutcome: result.isError ? "failed" : "succeeded", error: { code: "operation_denied", message: "Origin authorization changed during the upstream call. Evidence retained under current policy; do not replay automatically." } };
+      return { ok: false, upstreamOutcome, error: { code: "operation_denied", message: "Origin authorization changed during the upstream call. Evidence retained under current policy; do not replay automatically." } };
     }
-    if (result.isError || (outputValidation && outputValidation.status !== "passed" && outputValidation.status !== "partial")) {
+    if (result.isError) {
+      const message = text || `Tool returned an error: ${operation.fullPathString}`;
       await emitAudit(context, {
         type: "tool_call",
         timestamp: new Date().toISOString(),
@@ -225,15 +248,15 @@ async function invokeOperation(
         toolId: operation.toolId,
         allowed: true,
         ok: false,
-        upstreamOutcome: result.isError ? "failed" : "succeeded",
+        upstreamOutcome: "failed",
         durationMs: Date.now() - started,
-        error: text || `Tool returned an error: ${operation.fullPathString}`
+        error: message
       });
       return {
         ok: false,
         responseId,
-        upstreamOutcome: result.isError ? "failed" : "succeeded",
-        error: { code: result.isError ? "tool_error" : "output_validation_failed", message: result.isError ? (text || `Tool returned an error: ${operation.fullPathString}`).slice(0, 1500) : "Upstream succeeded but output validation failed or was unavailable. Inspect the response; do not replay automatically." }
+        upstreamOutcome: "failed",
+        error: { code: "tool_error", message: message.slice(0, 1500) }
       };
     }
 
@@ -284,6 +307,34 @@ async function invokeOperation(
     );
   } finally {
     signal?.removeEventListener("abort", abort);
+  }
+}
+
+/** Advisory evidence only: schema drift or validator faults must not block delivery. */
+async function validateOutput(
+  context: ToolInvokerContext,
+  schema: JsonSchema,
+  value: unknown,
+  signal: AbortSignal
+): Promise<ValidationResult> {
+  const job = { purpose: "output" as const, schema, value };
+  try {
+    return context.host
+      ? await context.host.validate(context.responseOwner, job, signal)
+      : context.validator.validate(job);
+  } catch (error) {
+    return {
+      status: "unavailable",
+      validator: "none",
+      coverage: {
+        assertions: "not_performed",
+        schemaSupport: "unknown",
+        localRefs: false,
+        remoteRefs: false,
+        formatAssertions: false
+      },
+      diagnostics: [{ code: "output_validation_unavailable", message: errorMessage(error) }]
+    };
   }
 }
 

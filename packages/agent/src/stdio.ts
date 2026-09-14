@@ -16,6 +16,7 @@ export interface ServeTackMcpStdioOptions {
   readonly policy?: OperationPolicy | undefined;
   readonly onAuditEvent?: ((event: ToolAuditEvent) => void | Promise<void>) | undefined;
   readonly typecheck?: CreateTackAgentServerOptions["typecheck"];
+  readonly normalizeWhitespace?: CreateTackAgentServerOptions["normalizeWhitespace"];
 }
 
 export function serveTackMcpStdio(
@@ -34,6 +35,7 @@ function normalizeServeOptions(
   const policy = ownField(options, "policy") as OperationPolicy | undefined;
   const onAuditEvent = ownField(options, "onAuditEvent") as ServeTackMcpStdioOptions["onAuditEvent"];
   const typecheck = ownField(options, "typecheck") as ServeTackMcpStdioOptions["typecheck"];
+  const normalizeWhitespace = ownField(options, "normalizeWhitespace") as ServeTackMcpStdioOptions["normalizeWhitespace"];
 
   return {
     stateRoot: ownField<string>(options, "stateRoot"),
@@ -42,6 +44,7 @@ function normalizeServeOptions(
     codeRuntime,
     ...(policy ? { policy } : {}),
     ...(onAuditEvent ? { onAuditEvent } : {}),
-    ...(typecheck ? { typecheck } : {})
+    ...(typecheck ? { typecheck } : {}),
+    ...(normalizeWhitespace ? { normalizeWhitespace } : {})
   };
 }

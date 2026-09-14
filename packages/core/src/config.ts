@@ -52,7 +52,8 @@ function buildConfigSchema(kinds: readonly SourceKind[]): z.ZodType<TackConfig> 
         maxOutputBytes: z.number().int().positive().optional(),
         maxToolCalls: z.number().int().positive().optional(),
         maxToolRequestBytes: z.number().int().positive().optional(),
-        maxToolResponseBytes: z.number().int().positive().optional()
+        maxToolResponseBytes: z.number().int().positive().optional(),
+        normalizeWhitespace: z.array(z.string().min(1)).optional()
       })
       .optional(),
     security: z

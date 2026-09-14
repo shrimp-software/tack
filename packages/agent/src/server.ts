@@ -35,6 +35,7 @@ export interface CreateTackAgentServerOptions {
   readonly onAuditEvent?:
     ((event: ToolAuditEvent) => void | Promise<void>) | undefined;
   readonly typecheck?: CreateExecutionEngineOptions["typecheck"];
+  readonly normalizeWhitespace?: CreateExecutionEngineOptions["normalizeWhitespace"];
 }
 
 export function createTackAgentServer(
@@ -55,9 +56,10 @@ export function createTackAgentServer(
     policy,
     onAuditEvent: ownField(options, "onAuditEvent"),
     typecheck: ownField(options, "typecheck"),
+    normalizeWhitespace: ownField(options, "normalizeWhitespace"),
   });
   const server = new McpServer(
-    { name: "tack", version: "2.0.0" },
+    { name: "tack", version: "2.1.0" },
     { capabilities: { tools: {} } },
   );
   server.registerTool(

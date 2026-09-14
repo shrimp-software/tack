@@ -46,6 +46,36 @@ describe("downstream call delivery", () => {
     expect(invoke).toHaveBeenCalledTimes(1);
   });
 
+  it("leaves whitespace alone by default, and unless the operation's server id is listed", async () => {
+    const junky = { title: "Report   ", body: "line one  \n\n\n\n  line two\t\t\ttabbed" };
+    const invoke = vi.fn(async () =>
+      createTackResult({ structuredContent: junky, content: [{ type: "text", text: "irrelevant" }] })
+    );
+
+    const off = createTackToolInvoker({ host: host(), manifest: grafanaManifest(), runtime: { invoke, close: async () => {} } });
+    expect(await off.invoke({ path, args: {} })).toMatchObject({ ok: true, data: junky });
+
+    // `path` is served by the "grafana" server — listing an unrelated id is a no-op.
+    const otherServer = createTackToolInvoker({
+      host: host(),
+      manifest: grafanaManifest(),
+      runtime: { invoke, close: async () => {} },
+      normalizeWhitespace: ["some-other-server"]
+    });
+    expect(await otherServer.invoke({ path, args: {} })).toMatchObject({ ok: true, data: junky });
+
+    const on = createTackToolInvoker({
+      host: host(),
+      manifest: grafanaManifest(),
+      runtime: { invoke, close: async () => {} },
+      normalizeWhitespace: ["grafana"]
+    });
+    expect(await on.invoke({ path, args: {} })).toMatchObject({
+      ok: true,
+      data: { title: "Report", body: "line one\n\nline two tabbed" }
+    });
+  });
+
   it("blocks invalid input without coercion before any upstream call", async () => {
     const h = host();
     const calls: Array<{ toolId: string; args: unknown }> = [];
@@ -62,7 +92,12 @@ describe("downstream call delivery", () => {
     expect(calls).toHaveLength(0);
   });
 
-  it("preserves a successful upstream outcome when output validation fails", async () => {
+  it.each([
+    { withHost: false, validation: "failed" },
+    { withHost: true, validation: "failed" },
+    { withHost: true, validation: "unavailable" },
+    { withHost: true, validation: "throws" }
+  ])("delivers successful data when output validation is $validation (host: $withHost)", async ({ withHost, validation }) => {
     const manifest = buildManifest(
       { servers: { mock: { transport: "stdio", command: "mock" } } },
       [
@@ -82,21 +117,69 @@ describe("downstream call delivery", () => {
         }
       ]
     );
-    const h = host();
-    h.authorize("local", manifest);
+    const h = withHost ? host() : undefined;
+    h?.authorize("local", manifest);
+    if (h && validation !== "failed") {
+      const validate = h.validate.bind(h);
+      vi.spyOn(h, "validate").mockImplementation(async (owner, job, signal) => {
+        if (job.purpose !== "output") return validate(owner, job, signal);
+        if (validation === "throws") throw new Error("validator offline");
+        return {
+          status: "unavailable",
+          validator: "none",
+          coverage: { assertions: "not_performed", schemaSupport: "unknown", localRefs: false, remoteRefs: false, formatAssertions: false },
+          diagnostics: [{ code: "output_validation_unavailable", message: "validator offline" }]
+        };
+      });
+    }
+    const retain = h ? vi.spyOn(h, "retain") : undefined;
+    const onAuditEvent = vi.fn();
     const invoke = vi.fn(async () =>
       createTackResult({ structuredContent: { count: "wrong" }, content: [] })
     );
     const invoker = createTackToolInvoker({
       host: h,
       manifest,
+      runtime: { invoke, close: async () => {} },
+      onAuditEvent
+    });
+    const result = await invoker.invoke({ path: "mock.write", args: {} });
+    expect(result).toMatchObject({
+      ok: true,
+      data: { count: "wrong" },
+      dataShape: { count: "string" },
+      upstreamOutcome: "succeeded",
+      responseId: withHost ? expect.any(String) : null
+    });
+    expect(result).not.toHaveProperty("error");
+    expect(onAuditEvent).toHaveBeenCalledWith(expect.objectContaining({ ok: true, upstreamOutcome: "succeeded" }));
+    if (retain) {
+      expect(retain).toHaveBeenCalledWith("local", { count: "wrong" }, expect.objectContaining({
+        evidence: expect.objectContaining({
+          outputValidation: expect.objectContaining({
+            status: validation === "failed" ? "failed" : "unavailable",
+            diagnostics: expect.any(Array)
+          })
+        })
+      }));
+    }
+    expect(invoke).toHaveBeenCalledTimes(1);
+  });
+
+  it("still fails when the upstream tool reports an error", async () => {
+    const invoke = vi.fn(async () => createTackResult({
+      isError: true,
+      content: [{ type: "text", text: "write rejected" }]
+    }));
+    const invoker = createTackToolInvoker({
+      host: host(),
+      manifest: grafanaManifest(),
       runtime: { invoke, close: async () => {} }
     });
-    expect(await invoker.invoke({ path: "mock.write", args: {} })).toMatchObject({
+    expect(await invoker.invoke({ path, args: {} })).toMatchObject({
       ok: false,
-      upstreamOutcome: "succeeded",
-      error: { code: "output_validation_failed" },
-      responseId: expect.any(String)
+      upstreamOutcome: "failed",
+      error: { code: "tool_error", message: "write rejected" }
     });
     expect(invoke).toHaveBeenCalledTimes(1);
   });

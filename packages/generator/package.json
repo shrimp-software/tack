@@ -1,6 +1,6 @@
 {
   "name": "@cbxss/tack-generator",
-  "version": "2.0.0",
+  "version": "2.1.0",
   "type": "module",
   "exports": {
     ".": {
@@ -17,8 +17,8 @@
     "test": "vitest run --passWithNoTests"
   },
   "dependencies": {
-    "@cbxss/tack-core": "2.0.0",
-    "@cbxss/tack-sdk-types": "2.0.0"
+    "@cbxss/tack-core": "2.1.0",
+    "@cbxss/tack-sdk-types": "2.1.0"
   },
   "devDependencies": {
     "typescript": "^7.0.2",

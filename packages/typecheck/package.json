@@ -1,6 +1,6 @@
 {
   "name": "@cbxss/tack-typecheck",
-  "version": "2.0.0",
+  "version": "2.1.0",
   "type": "module",
   "exports": {
     ".": {
@@ -17,9 +17,9 @@
     "test": "vitest run --passWithNoTests"
   },
   "dependencies": {
-    "@cbxss/tack-codemode": "2.0.0",
-    "@cbxss/tack-core": "2.0.0",
-    "@cbxss/tack-sdk-types": "2.0.0",
+    "@cbxss/tack-codemode": "2.1.0",
+    "@cbxss/tack-core": "2.1.0",
+    "@cbxss/tack-sdk-types": "2.1.0",
     "typescript-5": "npm:typescript@^5.9.3"
   },
   "devDependencies": {

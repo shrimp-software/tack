@@ -102,6 +102,14 @@ Minimal config:
 Use `"runtime": { "type": "workerd" }` to switch code-mode execution to workerd. Operation paths are inferred from MCP tool names and discriminator schemas.
 The `service` block is only needed for bearer-protected `host` or for `serve`.
 
+Set `"runtime": { "normalizeWhitespace": ["grafana"] }` to strip incidental
+whitespace junk (padded lines, runs of blank lines, doubled spaces) from every
+string in a downstream response's `.data`, for just the listed server ids,
+before it reaches the sandbox. It's per-source and off by default — leave out
+any server whose responses are code, diffs, or markdown, where indentation
+and blank lines carry meaning (the bundled `markdown-source.ts` example is
+one: normalizing it would mangle fenced code blocks in the skills it serves).
+
 ## Sources
 
 The MCP surface is `execute({code,typecheck?:"strict"|"off"})`. Every cell starts

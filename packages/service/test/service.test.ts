@@ -1,7 +1,8 @@
 import type { CodeRuntime } from "@cbxss/tack-codemode";
+import { buildManifest, createTackResult } from "@cbxss/tack-core";
 import { createQuickJSRuntime } from "@cbxss/tack-runtime-quickjs";
 import { createWorkerdRuntime } from "@cbxss/tack-runtime-workerd";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { fakeRuntime, grafanaManifest } from "../../core/test/fixtures.js";
 
 import { listenTackHttpService, type TackHttpServiceHandle } from "../src/index.js";
@@ -169,6 +170,60 @@ describe("Tack HTTP service", () => {
       receiptId: expect.any(String)
     });
     expect(calls).toEqual([{ toolId: "grafana.list_datasources", args: {} }]);
+  });
+
+  it.each([
+    { name: "QuickJS", createRuntime: createQuickJSRuntime },
+    { name: "workerd", createRuntime: createWorkerdRuntime }
+  ])("delivers schema-mismatched output through /execute with $name without replaying", async ({ createRuntime }) => {
+    const manifest = buildManifest(
+      { servers: { mock: { transport: "stdio", command: "mock" } } },
+      [{
+        serverId: "mock",
+        tools: [{
+          name: "write",
+          inputSchema: { type: "object" },
+          outputSchema: {
+            type: "object",
+            properties: { count: { type: "number" } },
+            required: ["count"]
+          }
+        }]
+      }]
+    );
+    const invoke = vi.fn(async () => createTackResult({
+      structuredContent: { count: "7" },
+      content: []
+    }));
+    handle = await listenTackHttpService({
+      manifest,
+      runtime: { invoke, close: async () => {} },
+      codeRuntime: createRuntime({ timeoutMs: 5_000 }),
+      users: [{ id: "agent-a", token: "secret-a" }]
+    }, { port: 0 });
+
+    const executed = await json("/execute", "secret-a", {
+      code: `
+        const call = await tools.mock.write({});
+        if (!call.ok) throw new Error(call.error.message);
+        return { call, count: Number(call.data.count) };
+      `
+    });
+
+    expect(executed).toMatchObject({
+      status: "completed",
+      result: {
+        call: {
+          ok: true,
+          data: { count: "7" },
+          dataShape: { count: "string" },
+          upstreamOutcome: "succeeded",
+          responseId: expect.any(String)
+        },
+        count: 7
+      }
+    });
+    expect(invoke).toHaveBeenCalledTimes(1);
   });
 
   it("does not read live service user or rate-limit fields during request handling", async () => {

@@ -78,6 +78,14 @@ export interface TackConfig {
     readonly maxToolCalls?: number | undefined;
     readonly maxToolRequestBytes?: number | undefined;
     readonly maxToolResponseBytes?: number | undefined;
+    /**
+     * Server ids whose downstream responses get a whitespace clean-up pass
+     * (padded lines, runs of blank lines collapsed) before `.data` reaches
+     * the sandbox. Off by default, and per-source deliberately: a source
+     * whose responses are code, diffs, or markdown — where blank lines and
+     * indentation carry meaning — should stay out of this list.
+     */
+    readonly normalizeWhitespace?: readonly string[] | undefined;
   } | undefined;
   readonly security?: {
     readonly allowedOperations?: readonly string[] | undefined;

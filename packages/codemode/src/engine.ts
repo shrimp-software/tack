@@ -39,6 +39,8 @@ export interface CreateExecutionEngineOptions {
   readonly onAuditEvent?: Parameters<typeof createTackToolInvoker>[0]["onAuditEvent"];
   /** Live trace sink — receives every tool/builtin event as the execution runs. */
   readonly onTrace?: TraceSink | undefined;
+  /** Forwarded to {@link createTackToolInvoker}; see `normalizeWhitespace` there. */
+  readonly normalizeWhitespace?: readonly string[] | undefined;
   /**
    * Pre-run typecheck. When set, every cell is checked before it executes;
    * `mode: "error"` blocks on any diagnostic (nothing upstream fires),
@@ -73,6 +75,7 @@ export function createExecutionEngine(
   const defaultOnTrace = ownField(options, "onTrace") as TraceSink | undefined;
   const typecheck = ownField(options, "typecheck") as CreateExecutionEngineOptions["typecheck"];
   const responseOwner = ownField<string>(options, "responseOwner") ?? "local";
+  const normalizeWhitespace = ownField<readonly string[]>(options, "normalizeWhitespace");
 
   const suppliedHost = ownField<ExecutionHost>(options, "host");
   const host = suppliedHost ?? new ExecutionHost();
@@ -127,6 +130,7 @@ export function createExecutionEngine(
       runtime,
       responseOwner,
       executionId,
+      ...(normalizeWhitespace ? { normalizeWhitespace } : {}),
       ...(typeof codeRuntime.toolTimeoutMs === "number" ? { toolTimeoutMs: codeRuntime.toolTimeoutMs } : {}),
       ...(policy ? { policy } : {}),
       onTraceEvent: (event) => {

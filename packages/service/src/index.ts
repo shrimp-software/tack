@@ -42,6 +42,7 @@ export interface CreateTackHttpServiceOptions {
   readonly rateLimit?: ServiceRateLimit | undefined;
   readonly onAuditEvent?: ((event: ServiceAuditEvent) => void | Promise<void>) | undefined;
   readonly typecheck?: CreateExecutionEngineOptions["typecheck"];
+  readonly normalizeWhitespace?: CreateExecutionEngineOptions["normalizeWhitespace"];
 }
 
 export interface TackHttpListenOptions {
@@ -89,6 +90,7 @@ interface ServiceContext {
   readonly maxRequestBytes: number;
   readonly onAuditEvent?: CreateTackHttpServiceOptions["onAuditEvent"] | undefined;
   readonly typecheck?: CreateExecutionEngineOptions["typecheck"];
+  readonly normalizeWhitespace?: CreateExecutionEngineOptions["normalizeWhitespace"];
 }
 
 const serviceHosts = new WeakMap<Server, ExecutionHost>();
@@ -196,7 +198,8 @@ async function handleRequest(
         codeRuntime: context.codeRuntime,
         ...(policy ? { policy } : {}),
         ...(onAuditEvent ? { onAuditEvent } : {}),
-        ...(context.typecheck ? { typecheck: context.typecheck } : {})
+        ...(context.typecheck ? { typecheck: context.typecheck } : {}),
+        ...(context.normalizeWhitespace ? { normalizeWhitespace: context.normalizeWhitespace } : {})
       });
       const mode = ownField(body, "typecheck");
       if (mode !== undefined && mode !== "strict" && mode !== "off") { writeJson(response, 400, { error: "invalid_typecheck" }); return; }
@@ -226,6 +229,7 @@ function normalizeServiceContext(options: CreateTackHttpServiceOptions): Service
   const policy = ownField<OperationPolicy>(options, "policy");
   const onAuditEvent = ownField<CreateTackHttpServiceOptions["onAuditEvent"]>(options, "onAuditEvent");
   const typecheck = ownField<CreateTackHttpServiceOptions["typecheck"]>(options, "typecheck");
+  const normalizeWhitespace = ownField<CreateTackHttpServiceOptions["normalizeWhitespace"]>(options, "normalizeWhitespace");
   return {
     host: new ExecutionHost(ownField<string>(options, "stateRoot") ? { root: ownField<string>(options, "stateRoot")! } : {}),
     manifest: snapshotManifest(ownField<TackManifest>(options, "manifest") as TackManifest),
@@ -235,7 +239,8 @@ function normalizeServiceContext(options: CreateTackHttpServiceOptions): Service
     ...(policy ? { policy } : {}),
     maxRequestBytes: ownField<number>(options, "maxRequestBytes") ?? DEFAULT_MAX_REQUEST_BYTES,
     ...(onAuditEvent ? { onAuditEvent } : {}),
-    ...(typecheck ? { typecheck } : {})
+    ...(typecheck ? { typecheck } : {}),
+    ...(normalizeWhitespace ? { normalizeWhitespace } : {})
   };
 }
 
