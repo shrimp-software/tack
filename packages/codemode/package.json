@@ -1,6 +1,6 @@
 {
   "name": "@cbxss/tack-codemode",
-  "version": "2.1.0",
+  "version": "2.2.0",
   "type": "module",
   "exports": {
     ".": {
@@ -17,11 +17,11 @@
     "test": "vitest run --passWithNoTests"
   },
   "dependencies": {
-    "@cbxss/tack-core": "2.1.0",
-    "@cbxss/tack-host-jobs": "2.1.0",
-    "@cbxss/tack-responses": "2.1.0",
-    "@cbxss/tack-sdk-types": "2.1.0",
-    "@cbxss/tack-validation": "2.1.0"
+    "@cbxss/tack-core": "2.2.0",
+    "@cbxss/tack-host-jobs": "2.2.0",
+    "@cbxss/tack-responses": "2.2.0",
+    "@cbxss/tack-sdk-types": "2.2.0",
+    "@cbxss/tack-validation": "2.2.0"
   },
   "devDependencies": {
     "typescript": "^7.0.2",

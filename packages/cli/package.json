@@ -1,6 +1,6 @@
 {
   "name": "@cbxss/tack",
-  "version": "2.1.0",
+  "version": "2.2.0",
   "type": "module",
   "bin": {
     "tack": "dist/index.js"
@@ -21,16 +21,16 @@
     "dev": "tsx src/index.ts"
   },
   "dependencies": {
-    "@cbxss/tack-agent": "2.1.0",
-    "@cbxss/tack-codemode": "2.1.0",
-    "@cbxss/tack-core": "2.1.0",
-    "@cbxss/tack-generator": "2.1.0",
-    "@cbxss/tack-plugin": "2.1.0",
-    "@cbxss/tack-runtime-quickjs": "2.1.0",
-    "@cbxss/tack-runtime-workerd": "2.1.0",
-    "@cbxss/tack-service": "2.1.0",
-    "@cbxss/tack-sources": "2.1.0",
-    "@cbxss/tack-typecheck": "2.1.0",
+    "@cbxss/tack-agent": "2.2.0",
+    "@cbxss/tack-codemode": "2.2.0",
+    "@cbxss/tack-core": "2.2.0",
+    "@cbxss/tack-generator": "2.2.0",
+    "@cbxss/tack-plugin": "2.2.0",
+    "@cbxss/tack-runtime-quickjs": "2.2.0",
+    "@cbxss/tack-runtime-workerd": "2.2.0",
+    "@cbxss/tack-service": "2.2.0",
+    "@cbxss/tack-sources": "2.2.0",
+    "@cbxss/tack-typecheck": "2.2.0",
     "commander": "^15.0.0"
   },
   "devDependencies": {

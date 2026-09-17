@@ -6,6 +6,7 @@ import { describeShape } from "./data-shape.js";
 import { cleanWhitespace } from "./normalize.js";
 import {
   findOperation,
+  listOperations,
   snapshotManifest,
   operationArgs,
   ownField,
@@ -16,11 +17,13 @@ import {
 
 import { ToolDispatchError } from "./dispatch-error.js";
 import { isOperationAllowed, type OperationPolicy } from "./policy.js";
-import { CodeRuntimeTimeoutError, errorMessage, withTimeout } from "./runtime-lifecycle.js";
+import { CodeRuntimeTimeoutError, errorMessage, withAbort, withTimeout } from "./runtime-lifecycle.js";
 import type { BuiltinTraceEvent, ToolCallOutput, ToolInvoker, ToolTraceEvent } from "./types.js";
 
 export interface CreateTackToolInvokerOptions {
   readonly host?: ExecutionHost | undefined;
+  /** Direct SDK mode: no builtins or relative-path aliases. */
+  readonly canonicalOperationsOnly?: boolean | undefined;
   readonly manifest: TackManifest;
   readonly runtime: TackRuntime;
   readonly policy?: OperationPolicy | undefined;
@@ -51,6 +54,7 @@ interface BuiltinCallError {
 
 interface ToolInvokerContext {
   readonly host?: ExecutionHost | undefined;
+  readonly canonicalOperationsOnly: boolean;
   readonly validator: ValidationKernel;
   readonly responseOwner: string;
   readonly manifest: TackManifest;
@@ -72,11 +76,11 @@ export function createTackToolInvoker(
       const pathInput = ownField<unknown>(input, "path");
       const path = typeof pathInput === "string" ? pathInput : "";
       const args = ownField<unknown>(input, "args");
-      if (Object.hasOwn(BUILTIN_CONTRACTS, path)) {
+      if (!context.canonicalOperationsOnly && Object.hasOwn(BUILTIN_CONTRACTS, path)) {
         return traceBuiltin(context, path as BuiltinName, () => invokeBuiltin(path as BuiltinName, args, context, ownField<AbortSignal>(input, "signal")));
       }
 
-      return invokeOperation(context, path, args, ownField<AbortSignal>(input, "signal"));
+      return invokeOperation(context, path, args, ownField<AbortSignal>(input, "signal"), ownField<number | null>(input, "timeoutMs"));
     }
   };
 }
@@ -88,6 +92,7 @@ function normalizeToolInvokerContext(options: CreateTackToolInvokerOptions): Too
   const onAuditEvent = ownField<CreateTackToolInvokerOptions["onAuditEvent"]>(options, "onAuditEvent");
   return {
     host: ownField<ExecutionHost>(options, "host"),
+    canonicalOperationsOnly: ownField<boolean>(options, "canonicalOperationsOnly") === true,
     validator: new ValidationKernel(),
     responseOwner: ownField<string>(options, "responseOwner") ?? "local",
     manifest: snapshotManifest(ownField<TackManifest>(options, "manifest") as TackManifest),
@@ -134,11 +139,14 @@ async function invokeOperation(
   context: ToolInvokerContext,
   path: string,
   args: unknown,
-  signal: AbortSignal | undefined
+  signal: AbortSignal | undefined,
+  timeoutMs: number | null | undefined
 ): Promise<ToolCallOutput> {
   const started = Date.now();
   const manifest = context.manifest;
-  const operation = findOperation(manifest, path);
+  const operation = context.canonicalOperationsOnly
+    ? listOperations(manifest).find(operation => operation.fullPathString === path)
+    : findOperation(manifest, path);
   if (!operation) {
     await emitAudit(context, {
       type: "tool_call",
@@ -196,11 +204,12 @@ async function invokeOperation(
     if (context.host && !context.host.canInvoke(context.responseOwner, operation, manifest)) return toolCallError("operation_denied", "Operation revoked before dispatch");
     upstreamStarted = true;
     const invoke = context.runtime.invoke(operation.toolId, operationArgs(operation, args), { signal: controller.signal });
-    const result = context.toolTimeoutMs === undefined ? await invoke : await withTimeout({
+    const deadline = timeoutMs === null ? undefined : timeoutMs ?? context.toolTimeoutMs;
+    const result = deadline === undefined ? await withAbort(invoke, controller.signal) : await withTimeout({
       promise: invoke,
-      timeoutMs: context.toolTimeoutMs,
+      timeoutMs: deadline,
       signal: controller.signal,
-      message: `Tool call timed out after ${context.toolTimeoutMs}ms`
+      message: `Tool call timed out after ${deadline}ms`
     });
     const text = result.text();
     const parsed = result.structuredContent === undefined ? parseJsonText(text) : result.structuredContent;
@@ -303,7 +312,8 @@ async function invokeOperation(
           ? "cancelled"
           : "downstream_error",
       message,
-      error
+      error,
+      upstreamStarted ? "unknown" : "not_started"
     );
   } finally {
     signal?.removeEventListener("abort", abort);

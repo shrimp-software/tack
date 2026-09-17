@@ -1,6 +1,6 @@
 {
   "name": "@cbxss/tack-sdk-types",
-  "version": "2.1.0",
+  "version": "2.2.0",
   "type": "module",
   "exports": {
     ".": {
@@ -17,7 +17,7 @@
     "test": "vitest run --passWithNoTests"
   },
   "dependencies": {
-    "@cbxss/tack-core": "2.1.0",
+    "@cbxss/tack-core": "2.2.0",
     "json-schema-to-typescript": "^15.0.4"
   },
   "devDependencies": {

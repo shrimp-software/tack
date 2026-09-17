@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { appendFile, mkdir, readFile, stat } from "node:fs/promises";
+import { readFile, stat } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { Command } from "commander";
 import {
@@ -8,6 +8,8 @@ import {
 } from "@cbxss/tack-agent";
 import {
   createExecutionEngine,
+  createOperationPolicy,
+  createAuditSink,
   ExecutionHost,
   publicExecution,
   formatTraceLine,
@@ -18,7 +20,7 @@ import {
   type OperationPolicy,
   type ToolAuditEvent
 } from "@cbxss/tack-codemode";
-import { createTypeChecker } from "@cbxss/tack-typecheck";
+import { createTypeChecker, includeProjectDeclaration } from "@cbxss/tack-typecheck";
 import {
   DEFAULT_CONFIG_PATH,
   DEFAULT_OUTPUT_DIR,
@@ -33,7 +35,7 @@ import {
   type TackOperation,
   writeJsonPromise
 } from "@cbxss/tack-core";
-import { generateDocsPromise, generateSdkPromise } from "@cbxss/tack-generator";
+import { generateDocsPromise, generateSdkPromise, generateProjectTypesPromise } from "@cbxss/tack-generator";
 import {
   ensureCheckout,
   parsePluginRef,
@@ -65,27 +67,34 @@ const DEFAULT_DISCOVERY_CACHE_PATH = ".tack/discovery-cache.json";
 program
   .name("tack")
   .description("Compile MCP tools into agent-friendly SDKs and code-mode tools")
-  .version("2.1.0");
+  .version("2.2.0");
 
 program
   .command("init")
-  .description("Create a minimal tack.config.json")
+  .description("Create a minimal tack.config.json or enable SDK project types")
   .option("-c, --config <path>", "config path", DEFAULT_CONFIG_PATH)
-  .action(async (options: { config: string }) =>
+  .option("--sdk", "enable direct-import SDK project types, refreshed by tack build")
+  .option("--tsconfig <path>", "SDK tsconfig path relative to the Tack config (default: ./tsconfig.json)")
+  .action(async (options: { config: string; sdk?: boolean; tsconfig?: string }) =>
     run(async () => {
-      if (await exists(options.config)) {
+      if (options.tsconfig !== undefined && (!options.sdk || !options.tsconfig)) throw new Error("--tsconfig requires --sdk and a non-empty path");
+      const present = await exists(options.config);
+      if (present && !options.sdk) {
         console.log(`${options.config} already exists`);
         return;
       }
-
-      await writeJsonPromise(options.config, createDefaultConfig());
+      const config = present ? JSON.parse(await readFile(options.config, "utf8")) : createDefaultConfig();
+      if (typeof config !== "object" || config === null || Array.isArray(config)) throw new Error("Tack config must contain an object");
+      if (options.sdk) config.sdk = { tsconfig: options.tsconfig ?? config.sdk?.tsconfig ?? "./tsconfig.json" };
+      await writeJsonPromise(options.config, config);
       console.log(`Wrote ${options.config}`);
+      if (options.sdk) console.log("SDK project types enabled. Install @cbxss/tack-sdk, configure servers, then run tack build.");
     })
   );
 
 program
   .command("generate")
-  .description("Generate a static SDK from live MCP discovery")
+  .description("Generate static TypeScript clients from discovery")
   .option("-c, --config <path>", "config path", DEFAULT_CONFIG_PATH)
   .option("-o, --out <dir>", "SDK output directory")
   .action(async (options: { config: string; out?: string }) =>
@@ -117,13 +126,22 @@ program
 
 program
   .command("build")
-  .description("Run live discovery, refresh the cache, and generate an SDK")
+  .description("Refresh discovery and SDK project types (or legacy static clients)")
   .option("-c, --config <path>", "config path", DEFAULT_CONFIG_PATH)
   .option("-o, --out <dir>", "SDK output directory")
   .action(async (options: { config: string; out?: string }) =>
     run(async () => {
       const { config, manifest } = await loadWorkspace(options.config);
       await writeJsonPromise(DEFAULT_DISCOVERY_CACHE_PATH, manifest);
+      if (config.sdk) {
+        if (options.out) throw new Error("--out is for legacy static clients; SDK declarations belong to sdk.tsconfig's project");
+        const tsconfig = resolve(dirname(resolve(options.config)), config.sdk.tsconfig);
+        const declaration = await generateProjectTypesPromise({ manifest, projectDir: dirname(tsconfig), configPath: resolve(options.config) });
+        await includeProjectDeclaration(tsconfig, declaration);
+        console.log(`Built ${toolCount(manifest)} tools into SDK project types at ${declaration}`);
+        console.log(`Included in ${tsconfig}; use import { Tack } from \"@cbxss/tack-sdk\"`);
+        return;
+      }
       const outDir = options.out ?? config.output?.dir ?? DEFAULT_OUTPUT_DIR;
       await generateSdkPromise({ manifest, outDir });
       console.log(`Built ${toolCount(manifest)} tools into TypeScript SDK at ${outDir}`);
@@ -662,18 +680,6 @@ async function readConfigObject(configPath: string): Promise<Record<string, unkn
   return parsed as Record<string, unknown>;
 }
 
-function createOperationPolicy(config: TackConfig): OperationPolicy | undefined {
-  const security = config.security;
-  if (!security?.allowedOperations && !security?.deniedOperations) {
-    return undefined;
-  }
-
-  return {
-    ...(security.allowedOperations ? { allowedOperations: security.allowedOperations } : {}),
-    ...(security.deniedOperations ? { deniedOperations: security.deniedOperations } : {})
-  };
-}
-
 /** Construct the checker for explicit strict requests. */
 function createTypecheckOptions(
   config: TackConfig,
@@ -690,18 +696,6 @@ function createTypecheckOptions(
     console.warn(`[tack] typecheck unavailable, running without it: ${error instanceof Error ? error.message : error}`);
     return undefined;
   }
-}
-
-function createAuditSink(config: TackConfig): ((event: ToolAuditEvent) => Promise<void>) | undefined {
-  const path = config.security?.auditLog?.path;
-  if (!path) {
-    return undefined;
-  }
-
-  return async (event) => {
-    await mkdir(dirname(path), { recursive: true });
-    await appendFile(path, `${JSON.stringify(event)}\n`, "utf8");
-  };
 }
 
 function toolCount(manifest: { readonly tools: Readonly<Record<string, unknown>> }) {

@@ -44,7 +44,11 @@ function isMcpTransport(value: unknown): value is Transport {
 export async function discoverMcpServers(
   entries: readonly McpServerEntry[]
 ): Promise<DiscoveredServer[]> {
-  return Promise.all(entries.map(([serverId, serverConfig]) => discoverServer(serverId, serverConfig)));
+  const discovered = await Promise.allSettled(entries.map(([serverId, serverConfig]) => discoverServer(serverId, serverConfig)));
+  // Every temporary connection must finish its finally/close before rejection.
+  const failure = discovered.find(result => result.status === "rejected");
+  if (failure?.status === "rejected") throw failure.reason;
+  return discovered.flatMap(result => result.status === "fulfilled" ? [result.value] : []);
 }
 
 export async function discoverMcpManifestPromise(config: TackConfig): Promise<TackManifest> {
@@ -130,7 +134,8 @@ export async function createMcpToolRuntime(
         }
       };
       if (signal?.aborted) {
-        abort();
+        // This caller only waited for a shared connection; it has not sent a
+        // request. Retiring that connection would cancel unrelated callers.
         throw cancelled();
       }
       try {

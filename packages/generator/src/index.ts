@@ -12,6 +12,24 @@ import { writeSdkFiles } from "./files.js";
 import { assertSupportedManifest } from "./manifest-checks.js";
 import { groupMethodsByServer, plannedOperations, toGeneratedMethods } from "./methods.js";
 import { renderSdkFiles } from "./sdk-render.js";
+import { writeProjectTypes } from "./project-types.js";
+
+export interface GenerateProjectTypesOptions {
+  readonly manifest: TackManifest;
+  /** Working directory used by scripts and containing their tsconfig. */
+  readonly projectDir: string;
+  /** Absolute or project-relative config path; must reside in the project. */
+  readonly configPath: string;
+}
+
+/** Returns the declaration path to include in the project's TypeScript files. */
+export function generateProjectTypesPromise(options: GenerateProjectTypesOptions): Promise<string> {
+  return wrapGeneratorError("Failed to generate Tack project types", async () => {
+    const manifest = sanitizeData(ownField(options, "manifest"), {}) as TackManifest;
+    assertSupportedManifest(manifest);
+    return writeProjectTypes(manifest, ownField<string>(options, "projectDir") ?? ".", ownField<string>(options, "configPath") ?? "tack.config.json");
+  });
+}
 
 export interface GenerateSdkOptions {
   readonly manifest: TackManifest;
@@ -48,9 +66,9 @@ export function generateDocsPromise(options: GenerateDocsOptions): Promise<void>
   });
 }
 
-async function wrapGeneratorError(message: string, work: () => Promise<void>): Promise<void> {
+async function wrapGeneratorError<T>(message: string, work: () => Promise<T>): Promise<T> {
   try {
-    await work();
+    return await work();
   } catch (cause) {
     const suffix = cause instanceof Error ? `: ${cause.message}` : "";
     throw new TackGeneratorError({ message: `${message}${suffix}`, cause });

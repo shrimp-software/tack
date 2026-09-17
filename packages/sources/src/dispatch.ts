@@ -53,13 +53,16 @@ export async function discoverManifest(
 ): Promise<TackManifest> {
   const prepared = await prepareConfig(config, options);
   const entries: readonly SourceServerEntry[] = Object.entries(prepared.servers);
-  const discovered = await Promise.all(
+  const discovered = await Promise.allSettled(
     SOURCES.map((source) => {
       const owned = new Set(sourceTransports(source));
       return source.discover(entries.filter(([, server]) => owned.has(server.transport)));
     })
   );
-  return buildManifest(prepared, discovered.flat(), undefined, SOURCE_KINDS);
+  // Do not abandon sibling discovery connections when one source fails.
+  const failure = discovered.find(result => result.status === "rejected");
+  if (failure?.status === "rejected") throw failure.reason;
+  return buildManifest(prepared, discovered.flatMap(result => result.status === "fulfilled" ? result.value : []), undefined, SOURCE_KINDS);
 }
 
 export interface CreateRuntimeOptions extends WorkspaceOptions {
@@ -128,7 +131,10 @@ export async function createRuntime({ config, manifest, configDir }: CreateRunti
         return closePromise;
       }
       closed = true;
-      closePromise = Promise.all(runtimes.map((runtime) => runtime.close())).then(() => undefined);
+      closePromise = Promise.allSettled(runtimes.map((runtime) => runtime.close())).then(results => {
+        const failure = results.find(result => result.status === "rejected");
+        if (failure?.status === "rejected") throw failure.reason;
+      });
       return closePromise;
     }
   };

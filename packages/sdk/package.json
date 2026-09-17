@@ -1,0 +1,31 @@
+{
+  "name": "@cbxss/tack-sdk",
+  "version": "2.2.0",
+  "description": "A live, config-driven TypeScript client for Tack tools.",
+  "type": "module",
+  "engines": { "node": ">=22.18.0" },
+  "exports": {
+    ".": { "types": "./dist/index.d.ts", "import": "./dist/index.js" }
+  },
+  "files": ["dist", "examples"],
+  "scripts": {
+    "build": "rm -rf dist && tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.test.json",
+    "test": "vitest run --passWithNoTests",
+    "test:consumer": "node test/packed-consumer.mjs"
+  },
+  "dependencies": {
+    "@cbxss/tack-core": "2.2.0",
+    "@cbxss/tack-codemode": "2.2.0",
+    "@cbxss/tack-plugin": "2.2.0",
+    "@cbxss/tack-sources": "2.2.0"
+  },
+  "devDependencies": {
+    "typescript": "^7.0.2",
+    "vitest": "^4.1.10"
+  },
+  "license": "MIT",
+  "repository": { "type": "git", "url": "git+https://github.com/shrimp-software/tack.git" },
+  "homepage": "https://github.com/shrimp-software/tack#readme",
+  "bugs": { "url": "https://github.com/shrimp-software/tack/issues" }
+}

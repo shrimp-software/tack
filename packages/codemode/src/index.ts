@@ -1,3 +1,4 @@
+export * from "./config.js";
 export * from "./data-shape.js";
 export * from "./describe.js";
 export * from "./dispatch-error.js";

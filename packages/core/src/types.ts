@@ -101,6 +101,8 @@ export interface TackConfig {
     readonly rateLimit?: RateLimitConfig | undefined;
     readonly users?: readonly ServiceUserConfig[] | undefined;
   } | undefined;
+  /** Opt-in project declarations, refreshed by tack build. Path is config-relative. */
+  readonly sdk?: { readonly tsconfig: string } | undefined;
   readonly storage?: { readonly root?: string | undefined } | undefined;
   readonly output?: {
     readonly dir?: string | undefined;

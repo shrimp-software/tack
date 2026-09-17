@@ -83,7 +83,10 @@ export class McpConnectionPool {
     this.closed = true;
     const slots = [...this.slotsByGeneration.values()];
     this.slots.clear();
-    this.closePromise = Promise.all(slots.map((slot) => this.retire(slot))).then(() => undefined);
+    this.closePromise = Promise.allSettled(slots.map((slot) => this.retire(slot))).then(results => {
+      const failure = results.find(result => result.status === "rejected");
+      if (failure?.status === "rejected") throw failure.reason;
+    });
     return this.closePromise;
   }
 
@@ -211,7 +214,12 @@ async function openStdioConnection(
     stderr: "pipe"
   });
 
-  await client.connect(transport);
+  try {
+    await client.connect(transport);
+  } catch (cause) {
+    await Promise.allSettled([client.close(), transport.close()]);
+    throw cause;
+  }
   return {
     transport: "stdio",
     client: {

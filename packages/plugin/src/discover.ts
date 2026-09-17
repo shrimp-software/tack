@@ -19,10 +19,13 @@ type Entry = readonly [serverId: string, config: TackServerConfig];
  * `[<skill>]`; each bundled MCP server's tools land at `["mcp", <server>, <op>]`.
  * Overlapping leaves are left for `listOperations`' `uniquePath` to de-dupe.
  */
-export function discoverPluginServers(entries: readonly Entry[]): Promise<DiscoveredServer[]> {
-  return Promise.all(
+export async function discoverPluginServers(entries: readonly Entry[]): Promise<DiscoveredServer[]> {
+  const discovered = await Promise.allSettled(
     entries.map(([serverId, config]) => discoverOne(serverId, config as PluginServerConfig))
   );
+  const failure = discovered.find(result => result.status === "rejected");
+  if (failure?.status === "rejected") throw failure.reason;
+  return discovered.flatMap(result => result.status === "fulfilled" ? [result.value] : []);
 }
 
 async function discoverOne(serverId: string, config: PluginServerConfig): Promise<DiscoveredServer> {
@@ -47,7 +50,7 @@ function skillTools(mount: PluginMount): DiscoveredTool[] {
 }
 
 async function bundledMcpTools(serverId: string, mount: PluginMount): Promise<DiscoveredTool[]> {
-  const groups = await Promise.all(mount.mcpServers.map(async ({ server: bundled, segment }) => {
+  const groups = await Promise.allSettled(mount.mcpServers.map(async ({ server: bundled, segment }) => {
     try {
       const [discovered] = await discoverMcpServers([[bundled.key, bundled.config]]);
       return (discovered?.tools ?? []).map((tool) => ({
@@ -64,5 +67,7 @@ async function bundledMcpTools(serverId: string, mount: PluginMount): Promise<Di
       });
     }
   }));
-  return groups.flat();
+  const failure = groups.find(result => result.status === "rejected");
+  if (failure?.status === "rejected") throw failure.reason;
+  return groups.flatMap(result => result.status === "fulfilled" ? result.value : []);
 }

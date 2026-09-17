@@ -64,6 +64,12 @@ export function buildMethodTree<M extends MethodLike>(methods: readonly M[]): Me
 export interface RenderInterfaceTreeOptions<M extends MethodLike> {
   /** The leaf method's return type, e.g. `m => m.resultType` or `` m => `CodeModeResult<${m.outputType}>` ``. */
   readonly result: (method: M) => string;
+  /** Override parameters without changing the legacy/static signature. */
+  readonly parameters?: (method: M) => string;
+  /** Optional base type for nested namespaces, without affecting legacy trees. */
+  readonly namespaceType?: string;
+  /** Optional generic wrapper for callable leaves; legacy methods stay unchanged. */
+  readonly callableType?: string;
 }
 
 /** Render a method tree as the body lines of a TypeScript object/interface type. */
@@ -74,14 +80,18 @@ export function renderInterfaceTree<M extends MethodLike>(
 ): string[] {
   return [...tree.children.entries()].flatMap(([name, child]) => {
     if (child.method) {
+      const parameters = options.parameters?.(child.method) ?? argSignature(child.method);
+      const result = `Promise<${options.result(child.method)}>`;
       return [
         ...renderJsDoc(child.method.description, child.method.examples, indent),
-        `${indent}${propertyKey(name)}(${argSignature(child.method)}): Promise<${options.result(child.method)}>;`
+        options.callableType
+          ? `${indent}readonly ${propertyKey(name)}: ${options.callableType}<(${parameters}) => ${result}>;`
+          : `${indent}${propertyKey(name)}(${parameters}): ${result};`
       ];
     }
 
     return [
-      `${indent}readonly ${propertyKey(name)}: {`,
+      `${indent}readonly ${propertyKey(name)}: ${options.namespaceType ? `${options.namespaceType} & ` : ""}{`,
       ...renderInterfaceTree(child, `${indent}  `, options),
       `${indent}};`
     ];

@@ -89,17 +89,17 @@
     },
     "packages/agent": {
       "name": "@cbxss/tack-agent",
-      "version": "2.1.0",
+      "version": "2.2.0",
       "dependencies": {
-        "@cbxss/tack-codemode": "2.1.0",
-        "@cbxss/tack-core": "2.1.0",
+        "@cbxss/tack-codemode": "2.2.0",
+        "@cbxss/tack-core": "2.2.0",
         "@modelcontextprotocol/server": "2.0.0-beta.5",
         "zod": "^4.4.3",
       },
       "devDependencies": {
-        "@cbxss/tack-runtime-quickjs": "2.1.0",
-        "@cbxss/tack-sources": "2.1.0",
-        "@cbxss/tack-typecheck": "2.1.0",
+        "@cbxss/tack-runtime-quickjs": "2.2.0",
+        "@cbxss/tack-sources": "2.2.0",
+        "@cbxss/tack-typecheck": "2.2.0",
         "@modelcontextprotocol/client": "2.0.0-beta.5",
         "typescript": "^7.0.2",
         "vitest": "^4.1.10",
@@ -107,21 +107,21 @@
     },
     "packages/cli": {
       "name": "@cbxss/tack",
-      "version": "2.1.0",
+      "version": "2.2.0",
       "bin": {
         "tack": "./dist/index.js",
       },
       "dependencies": {
-        "@cbxss/tack-agent": "2.1.0",
-        "@cbxss/tack-codemode": "2.1.0",
-        "@cbxss/tack-core": "2.1.0",
-        "@cbxss/tack-generator": "2.1.0",
-        "@cbxss/tack-plugin": "2.1.0",
-        "@cbxss/tack-runtime-quickjs": "2.1.0",
-        "@cbxss/tack-runtime-workerd": "2.1.0",
-        "@cbxss/tack-service": "2.1.0",
-        "@cbxss/tack-sources": "2.1.0",
-        "@cbxss/tack-typecheck": "2.1.0",
+        "@cbxss/tack-agent": "2.2.0",
+        "@cbxss/tack-codemode": "2.2.0",
+        "@cbxss/tack-core": "2.2.0",
+        "@cbxss/tack-generator": "2.2.0",
+        "@cbxss/tack-plugin": "2.2.0",
+        "@cbxss/tack-runtime-quickjs": "2.2.0",
+        "@cbxss/tack-runtime-workerd": "2.2.0",
+        "@cbxss/tack-service": "2.2.0",
+        "@cbxss/tack-sources": "2.2.0",
+        "@cbxss/tack-typecheck": "2.2.0",
         "commander": "^15.0.0",
       },
       "devDependencies": {
@@ -133,13 +133,13 @@
     },
     "packages/codemode": {
       "name": "@cbxss/tack-codemode",
-      "version": "2.1.0",
+      "version": "2.2.0",
       "dependencies": {
-        "@cbxss/tack-core": "2.1.0",
-        "@cbxss/tack-host-jobs": "2.1.0",
-        "@cbxss/tack-responses": "2.1.0",
-        "@cbxss/tack-sdk-types": "2.1.0",
-        "@cbxss/tack-validation": "2.1.0",
+        "@cbxss/tack-core": "2.2.0",
+        "@cbxss/tack-host-jobs": "2.2.0",
+        "@cbxss/tack-responses": "2.2.0",
+        "@cbxss/tack-sdk-types": "2.2.0",
+        "@cbxss/tack-validation": "2.2.0",
       },
       "devDependencies": {
         "typescript": "^7.0.2",
@@ -148,7 +148,7 @@
     },
     "packages/core": {
       "name": "@cbxss/tack-core",
-      "version": "2.1.0",
+      "version": "2.2.0",
       "dependencies": {
         "zod": "^4.4.3",
       },
@@ -159,10 +159,10 @@
     },
     "packages/generator": {
       "name": "@cbxss/tack-generator",
-      "version": "2.1.0",
+      "version": "2.2.0",
       "dependencies": {
-        "@cbxss/tack-core": "2.1.0",
-        "@cbxss/tack-sdk-types": "2.1.0",
+        "@cbxss/tack-core": "2.2.0",
+        "@cbxss/tack-sdk-types": "2.2.0",
       },
       "devDependencies": {
         "typescript": "^7.0.2",
@@ -171,7 +171,7 @@
     },
     "packages/host-jobs": {
       "name": "@cbxss/tack-host-jobs",
-      "version": "2.1.0",
+      "version": "2.2.0",
       "devDependencies": {
         "@types/node": "^26.1.1",
         "typescript": "^7.0.2",
@@ -180,9 +180,9 @@
     },
     "packages/mcp": {
       "name": "@cbxss/tack-mcp",
-      "version": "2.1.0",
+      "version": "2.2.0",
       "dependencies": {
-        "@cbxss/tack-core": "2.1.0",
+        "@cbxss/tack-core": "2.2.0",
         "@modelcontextprotocol/client": "2.0.0-beta.5",
       },
       "devDependencies": {
@@ -193,10 +193,10 @@
     },
     "packages/plugin": {
       "name": "@cbxss/tack-plugin",
-      "version": "2.1.0",
+      "version": "2.2.0",
       "dependencies": {
-        "@cbxss/tack-core": "2.1.0",
-        "@cbxss/tack-mcp": "2.1.0",
+        "@cbxss/tack-core": "2.2.0",
+        "@cbxss/tack-mcp": "2.2.0",
         "zod": "^4.4.3",
       },
       "devDependencies": {
@@ -206,10 +206,10 @@
     },
     "packages/responses": {
       "name": "@cbxss/tack-responses",
-      "version": "2.1.0",
+      "version": "2.2.0",
       "dependencies": {
-        "@cbxss/tack-core": "2.1.0",
-        "@cbxss/tack-host-jobs": "2.1.0",
+        "@cbxss/tack-core": "2.2.0",
+        "@cbxss/tack-host-jobs": "2.2.0",
       },
       "devDependencies": {
         "@types/node": "^26.1.1",
@@ -219,10 +219,10 @@
     },
     "packages/runtime-quickjs": {
       "name": "@cbxss/tack-runtime-quickjs",
-      "version": "2.1.0",
+      "version": "2.2.0",
       "dependencies": {
-        "@cbxss/tack-codemode": "2.1.0",
-        "@cbxss/tack-core": "2.1.0",
+        "@cbxss/tack-codemode": "2.2.0",
+        "@cbxss/tack-core": "2.2.0",
         "acorn": "^8.14.0",
         "esbuild": "^0.28.1",
         "quickjs-emscripten": "0.32.0",
@@ -235,10 +235,10 @@
     },
     "packages/runtime-workerd": {
       "name": "@cbxss/tack-runtime-workerd",
-      "version": "2.1.0",
+      "version": "2.2.0",
       "dependencies": {
-        "@cbxss/tack-codemode": "2.1.0",
-        "@cbxss/tack-core": "2.1.0",
+        "@cbxss/tack-codemode": "2.2.0",
+        "@cbxss/tack-core": "2.2.0",
         "esbuild": "^0.28.1",
         "workerd": "1.20260723.1",
       },
@@ -247,11 +247,25 @@
         "vitest": "^4.1.10",
       },
     },
+    "packages/sdk": {
+      "name": "@cbxss/tack-sdk",
+      "version": "2.2.0",
+      "dependencies": {
+        "@cbxss/tack-codemode": "2.2.0",
+        "@cbxss/tack-core": "2.2.0",
+        "@cbxss/tack-plugin": "2.2.0",
+        "@cbxss/tack-sources": "2.2.0",
+      },
+      "devDependencies": {
+        "typescript": "^7.0.2",
+        "vitest": "^4.1.10",
+      },
+    },
     "packages/sdk-types": {
       "name": "@cbxss/tack-sdk-types",
-      "version": "2.1.0",
+      "version": "2.2.0",
       "dependencies": {
-        "@cbxss/tack-core": "2.1.0",
+        "@cbxss/tack-core": "2.2.0",
         "json-schema-to-typescript": "^15.0.4",
       },
       "devDependencies": {
@@ -261,25 +275,25 @@
     },
     "packages/service": {
       "name": "@cbxss/tack-service",
-      "version": "2.1.0",
+      "version": "2.2.0",
       "dependencies": {
-        "@cbxss/tack-codemode": "2.1.0",
-        "@cbxss/tack-core": "2.1.0",
+        "@cbxss/tack-codemode": "2.2.0",
+        "@cbxss/tack-core": "2.2.0",
       },
       "devDependencies": {
-        "@cbxss/tack-runtime-quickjs": "2.1.0",
-        "@cbxss/tack-runtime-workerd": "2.1.0",
+        "@cbxss/tack-runtime-quickjs": "2.2.0",
+        "@cbxss/tack-runtime-workerd": "2.2.0",
         "typescript": "^7.0.2",
         "vitest": "^4.1.10",
       },
     },
     "packages/sources": {
       "name": "@cbxss/tack-sources",
-      "version": "2.1.0",
+      "version": "2.2.0",
       "dependencies": {
-        "@cbxss/tack-core": "2.1.0",
-        "@cbxss/tack-mcp": "2.1.0",
-        "@cbxss/tack-plugin": "2.1.0",
+        "@cbxss/tack-core": "2.2.0",
+        "@cbxss/tack-mcp": "2.2.0",
+        "@cbxss/tack-plugin": "2.2.0",
         "zod": "^4.4.3",
       },
       "devDependencies": {
@@ -289,11 +303,11 @@
     },
     "packages/typecheck": {
       "name": "@cbxss/tack-typecheck",
-      "version": "2.1.0",
+      "version": "2.2.0",
       "dependencies": {
-        "@cbxss/tack-codemode": "2.1.0",
-        "@cbxss/tack-core": "2.1.0",
-        "@cbxss/tack-sdk-types": "2.1.0",
+        "@cbxss/tack-codemode": "2.2.0",
+        "@cbxss/tack-core": "2.2.0",
+        "@cbxss/tack-sdk-types": "2.2.0",
         "typescript-5": "npm:typescript@^5.9.3",
       },
       "devDependencies": {
@@ -303,10 +317,10 @@
     },
     "packages/validation": {
       "name": "@cbxss/tack-validation",
-      "version": "2.1.0",
+      "version": "2.2.0",
       "dependencies": {
-        "@cbxss/tack-core": "2.1.0",
-        "@cbxss/tack-host-jobs": "2.1.0",
+        "@cbxss/tack-core": "2.2.0",
+        "@cbxss/tack-host-jobs": "2.2.0",
         "ajv": "^8.17.1",
       },
       "devDependencies": {
@@ -339,6 +353,8 @@
     "@cbxss/tack-runtime-quickjs": ["@cbxss/tack-runtime-quickjs@workspace:packages/runtime-quickjs"],
 
     "@cbxss/tack-runtime-workerd": ["@cbxss/tack-runtime-workerd@workspace:packages/runtime-workerd"],
+
+    "@cbxss/tack-sdk": ["@cbxss/tack-sdk@workspace:packages/sdk"],
 
     "@cbxss/tack-sdk-types": ["@cbxss/tack-sdk-types@workspace:packages/sdk-types"],
 

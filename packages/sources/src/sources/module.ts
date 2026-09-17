@@ -10,7 +10,12 @@ import type { Source, SourceServerEntry } from "../source.js";
  */
 export const moduleSource: Source = {
   kinds: [moduleSourceKind],
-  discover: (entries) => Promise.all(entries.flatMap(discoverEntry)),
+  discover: async (entries) => {
+    const discovered = await Promise.allSettled(entries.flatMap(discoverEntry));
+    const failure = discovered.find(result => result.status === "rejected");
+    if (failure?.status === "rejected") throw failure.reason;
+    return discovered.flatMap(result => result.status === "fulfilled" ? [result.value] : []);
+  },
   createRuntime: (input) => createModuleRuntime(input)
 };
 

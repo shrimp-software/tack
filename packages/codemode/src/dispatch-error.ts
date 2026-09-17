@@ -1,3 +1,5 @@
+import type { UpstreamOutcome } from "@cbxss/tack-core";
+
 /** Stable failure kinds for a rejected downstream tool dispatch. */
 export const TOOL_DISPATCH_CODES = [
   "downstream_error",
@@ -12,7 +14,8 @@ export class ToolDispatchError extends Error {
   constructor(
     readonly code: ToolDispatchCode,
     message: string,
-    cause?: unknown
+    cause?: unknown,
+    readonly upstreamOutcome: UpstreamOutcome = "unknown"
   ) {
     super(message, cause === undefined ? undefined : { cause });
     this.name = "ToolDispatchError";

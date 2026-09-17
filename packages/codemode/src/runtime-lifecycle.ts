@@ -25,12 +25,7 @@ export function withTimeout<T>(input: {
       reject(new CodeRuntimeTimeoutError(input.message));
     }, input.timeoutMs);
 
-    if (input.signal.aborted) {
-      abort();
-      return;
-    }
-
-    input.signal.addEventListener("abort", abort, { once: true });
+    // Observe the work even when already aborted: a later rejection is owned.
     input.promise.then(
       (value) => {
         cleanup();
@@ -41,6 +36,21 @@ export function withTimeout<T>(input: {
         reject(error);
       }
     );
+    if (input.signal.aborted) abort();
+    else input.signal.addEventListener("abort", abort, { once: true });
+  });
+}
+
+/** Wait cooperatively without a deadline, still observing late settlement. */
+export function withAbort<T>(promise: Promise<T>, signal: AbortSignal): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const abort = () => reject(signal.reason ?? new Error("Operation aborted"));
+    promise.then(
+      value => { signal.removeEventListener("abort", abort); resolve(value); },
+      error => { signal.removeEventListener("abort", abort); reject(error); }
+    );
+    if (signal.aborted) abort();
+    else signal.addEventListener("abort", abort, { once: true });
   });
 }
 

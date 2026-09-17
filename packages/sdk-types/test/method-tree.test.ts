@@ -42,6 +42,35 @@ describe("renderInterfaceTree", () => {
     expect(lines.join("\n")).toContain('"list"(args?: ListInput): Promise<CodeModeResult<ListOutput>>;');
   });
 
+  it("allows the live SDK to add call options without changing the default signature", () => {
+    const tree = buildMethodTree([method({ path: ["list"], inputType: "ListInput" })]);
+    const lines = renderInterfaceTree(tree, "  ", {
+      result: () => "TackResponse<unknown>",
+      parameters: () => "args?: ListInput, options?: TackCallOptions"
+    });
+    expect(lines.join("\n")).toContain('"list"(args?: ListInput, options?: TackCallOptions): Promise<TackResponse<unknown>>;');
+  });
+
+  it("applies an optional namespace base recursively without changing legacy trees", () => {
+    const tree = buildMethodTree([method({ path: ["server", "group", "read"] })]);
+    const options = { result: (m: MethodLike) => m.resultType };
+    const live = renderInterfaceTree(tree, "  ", { ...options, namespaceType: "TackToolNamespace" }).join("\n");
+    expect(live).toContain('readonly "server": TackToolNamespace & {');
+    expect(live).toContain('readonly "group": TackToolNamespace & {');
+    expect(renderInterfaceTree(tree, "  ", options).join("\n")).not.toContain("TackToolNamespace");
+  });
+
+  it("wraps live callable leaves without changing legacy method rendering", () => {
+    const tree = buildMethodTree([method({ path: ["group", "read"], description: "Read a value." })]);
+    const options = { result: (m: MethodLike) => m.resultType };
+    const live = renderInterfaceTree(tree, "  ", { ...options, callableType: "TackTool" }).join("\n");
+    expect(live).toContain("* Read a value.");
+    expect(live).toContain('readonly "read": TackTool<(args?: FooInput) => Promise<FooResult>>;');
+    const legacy = renderInterfaceTree(tree, "  ", options).join("\n");
+    expect(legacy).toContain('"read"(args?: FooInput): Promise<FooResult>;');
+    expect(legacy).not.toContain("TackTool");
+  });
+
   it("marks a required-input method's args as non-optional", () => {
     const tree = buildMethodTree([
       method({

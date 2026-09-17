@@ -3,6 +3,7 @@ export * from "./config.js";
 export * from "./defaults.js";
 export * from "./errors.js";
 export * from "./ids.js";
+export * from "./tool-proxy.js";
 export * from "./manifest.js";
 export * from "./operation-types.js";
 export * from "./operations.js";

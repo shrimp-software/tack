@@ -89,6 +89,7 @@ function buildConfigSchema(kinds: readonly SourceKind[]): z.ZodType<TackConfig> 
         dir: z.string().min(1).optional()
       })
       .optional(),
+    sdk: z.object({ tsconfig: z.string().min(1) }).optional(),
     storage: z.object({ root: z.string().min(1).optional() }).optional(),
     typecheck: z
       .object({

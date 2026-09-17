@@ -1,0 +1,5 @@
+{
+  "servers": {
+    "local": { "transport": "module", "entry": "./tools.ts" }
+  }
+}

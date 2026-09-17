@@ -59,7 +59,7 @@ export function createTackAgentServer(
     normalizeWhitespace: ownField(options, "normalizeWhitespace"),
   });
   const server = new McpServer(
-    { name: "tack", version: "2.1.0" },
+    { name: "tack", version: "2.2.0" },
     { capabilities: { tools: {} } },
   );
   server.registerTool(

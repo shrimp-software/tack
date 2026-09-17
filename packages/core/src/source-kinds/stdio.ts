@@ -1,3 +1,4 @@
+import { resolve } from "node:path";
 import { z } from "zod";
 
 import type { SourceKind } from "../source-kind.js";
@@ -16,6 +17,9 @@ const StdioServerConfigSchema = z.object({
 export const stdioSourceKind: SourceKind<StdioServerConfig> = {
   transport: "stdio",
   configSchema: StdioServerConfigSchema,
+  resolvePaths(config, baseDir) {
+    return config.cwd ? { ...config, cwd: resolve(baseDir, config.cwd) } : config;
+  },
   connection(config) {
     if (typeof config.command !== "string") {
       return undefined;

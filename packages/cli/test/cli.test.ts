@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -21,6 +21,51 @@ afterEach(async () => {
 });
 
 describe("CLI", () => {
+  it("enables direct-import project types once and refreshes them with build", async () => {
+    tmpPath = await mkdtemp(join(tmpdir(), "tack-cli-sdk-"));
+    const configPath = join(tmpPath, "tack.config.json");
+    await writeFile(configPath, JSON.stringify({ servers: { example: { transport: "stdio", command: "node", args: [fakeServer] } }, storage: { root: "./storage" } }));
+    await writeFile(join(tmpPath, "script.ts"), 'import { Tack } from "@cbxss/tack-sdk";\n');
+    await writeFile(join(tmpPath, "tsconfig.json"), '{ // preserve settings\n"compilerOptions":{"strict":true}, "files":["script.ts"]}');
+    const init = await runCli(["init", "--sdk", "--config", configPath], tmpPath);
+    expect(init.stdout).toContain("SDK project types enabled");
+    const config = JSON.parse(await readFile(configPath, "utf8"));
+    expect(config.servers.example.args).toEqual([fakeServer]);
+    expect(config.storage).toEqual({ root: "./storage" });
+    expect(config.sdk).toEqual({ tsconfig: "./tsconfig.json" });
+    const build = await runCli(["build", "--config", configPath], tmpPath);
+    expect(build.stdout).toContain('import { Tack } from "@cbxss/tack-sdk"');
+    const tsconfig = await readFile(join(tmpPath, "tsconfig.json"), "utf8");
+    expect(tsconfig).toContain("// preserve settings");
+    expect(tsconfig).toContain('"script.ts"');
+    const declaration = tsconfig.match(/\.tack\/types\/[a-f0-9]+\.d\.ts/u)![0];
+    const types = await readFile(join(tmpPath, declaration), "utf8");
+    expect(types).toContain('"./tack.config.json": ProjectTools');
+    expect(types).toContain('readonly "example"');
+    await expect(readFile(join(tmpPath, ".tack/generated/index.ts"), "utf8")).rejects.toMatchObject({ code: "ENOENT" });
+    await runCli(["build", "--config", configPath], tmpPath);
+    expect(await readFile(join(tmpPath, "tsconfig.json"), "utf8")).toBe(tsconfig);
+    expect(await readFile(join(tmpPath, declaration), "utf8")).toBe(types);
+    const removed = await runCli(["generate", "--live", "--config", configPath], tmpPath, { reject: false });
+    expect(removed.exitCode).toBe(1);
+    expect(removed.stderr).toContain("unknown option");
+  });
+
+  it("anchors SDK projects to a config-relative custom tsconfig", async () => {
+    tmpPath = await mkdtemp(join(tmpdir(), "tack-cli-sdk-project-"));
+    await mkdir(join(tmpPath, "configs"));
+    const configPath = join(tmpPath, "configs/staging.json");
+    await writeFile(configPath, JSON.stringify({ servers: { staging: { transport: "stdio", command: "node", args: [fakeServer] } } }));
+    await runCli(["init", "--sdk", "--config", configPath, "--tsconfig", "../tsconfig.json"], tmpPath);
+    await runCli(["init", "--sdk", "--config", configPath], tmpPath);
+    expect(JSON.parse(await readFile(configPath, "utf8")).sdk.tsconfig).toBe("../tsconfig.json");
+    await runCli(["build", "--config", configPath], join(tmpPath, "configs"));
+    const project = JSON.parse(await readFile(join(tmpPath, "tsconfig.json"), "utf8"));
+    const declaration = await readFile(join(tmpPath, project.files[0]), "utf8");
+    expect(declaration).toContain('readonly "./configs/staging.json": ProjectTools');
+    expect(declaration).not.toContain('readonly "tack.config.json": ProjectTools');
+  });
+
   it("initializes, generates, inspects, and calls tools", async () => {
     tmpPath = await mkdtemp(join(tmpdir(), "tack-cli-"));
     const configPath = join(tmpPath, "tack.config.json");
@@ -118,6 +163,10 @@ describe("CLI", () => {
     const generate = await runCli(["generate", "--config", configPath], tmpPath);
     expect(generate.stdout).toContain(`Generated TypeScript SDK in ${outDir}`);
     expect(await readFile(join(outDir, "index.ts"), "utf8")).toContain("createTackClient");
+    await expect(readFile(join(outDir, "sdk/client.ts"), "utf8")).rejects.toMatchObject({ code: "ENOENT" });
+    const legacyBuild = await runCli(["build", "--config", configPath], tmpPath);
+    expect(legacyBuild.stdout).toContain("TypeScript SDK");
+    await expect(readFile(join(tmpPath, "tsconfig.json"), "utf8")).rejects.toMatchObject({ code: "ENOENT" });
     const docsPath = join(tmpPath, ".tack", "tools.md");
     await runCli([
       "docs",

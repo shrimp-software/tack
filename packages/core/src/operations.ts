@@ -165,10 +165,10 @@ export function findOperation(
   manifest: TackManifest,
   pathString: string
 ): TackOperation | undefined {
-  return listOperations(manifest).find(
-    (operation) =>
-      operation.pathString === pathString || operation.fullPathString === pathString
-  );
+  const operations = listOperations(manifest);
+  // An exact qualified path must win over another namespace's relative alias.
+  return operations.find(operation => operation.fullPathString === pathString)
+    ?? operations.find(operation => operation.pathString === pathString);
 }
 
 function operationExample(operation: TackOperation): string {

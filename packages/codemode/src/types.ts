@@ -5,6 +5,8 @@ export interface ToolInvokeInput {
   readonly path: string;
   readonly args: unknown;
   readonly signal?: AbortSignal | undefined;
+  /** Overrides the default downstream timeout; null means the caller owns its deadline. */
+  readonly timeoutMs?: number | null | undefined;
 }
 
 export interface ToolCallOutput {

@@ -4,4 +4,5 @@
 // into `createExecutionEngine` by the CLI.
 
 export { buildAmbientDts } from "./ambient.js";
+export { includeProjectDeclaration } from "./project.js";
 export { createTypeChecker, type CreateTypeCheckerOptions } from "./checker.js";
